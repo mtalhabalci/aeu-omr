@@ -18,23 +18,18 @@ is fine-tuned in full on labels generated from the SymbTr corpus and audited not
 ## Sonuçlar
 
 Eğitimde görülmemiş 158 eserin 1.303 portesi üzerinde ölçülmüştür. Sınav porteleri SymbTr'nin Mus2 baskılarıdır,
-resimler bozmasızdır. Tablodaki AEU-OMR sütunu tezin son modelidir (v20).
+resimler bozmasızdır. Sonuçlar tezin son modeline (v20) aittir.
 
-| Ölçü | homr | AEU-OMR |
-|---|---|---|
-| Sembol doğruluğu | %76,1 | %99,8 |
-| Arıza işaretinin doğru sınıfı (4.723 işaret) | %16,2 | %99,8 |
-| Donanım satırı (2.728) | 0 | 2.728 |
-| Usûl (154) | 0 | 154 |
-| Hatasız porte (1.303) | 0 (%0) | 1.249 (%95,9) |
+| Ölçü | AEU-OMR |
+|---|---|
+| Sembol doğruluğu | %99,8 |
+| Arıza işaretinin doğru sınıfı (4.723 işaret) | %99,8 |
+| Donanım satırı (2.728) | 2.728 |
+| Usûl (154) | 154 |
+| Hatasız porte (1.303) | 1.249 (%95,9) |
 
-AEU-OMR, AEU'nun 1, 4 ve 5 komalık arıza sınıflarının her birini %99,6'nın üstünde bulmuştur.
-
-Ölçüm koşulları:
-
-- **homr sütunu:** Öğretmen destekli okumadır. Puanlama hoşgörülüdür: Batı müziğindeki diyez 4 komalık diyez, bemol
-  5 komalık bemol sayılmıştır.
-- **AEU-OMR sütunu:** Serbest okumadır. Yalnız donanım satırı öğretmen destekli okumayla sayılmıştır.
+AEU-OMR, AEU'nun 1, 4 ve 5 komalık arıza sınıflarının her birini %99,6'nın üstünde bulmuştur. Okuma serbesttir;
+yalnız donanım satırı öğretmen destekli okumayla sayılmıştır.
 
 ## Depodakiler
 
