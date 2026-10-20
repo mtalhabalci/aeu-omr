@@ -18,7 +18,9 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements-cpu.txt .
 # two OpenCV wheels share the cv2 folder; the last line puts back the headless one the service was tested with
-RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchvision==0.20.1 \
+# the CPU index alone serves a typing_extensions wheel with broken metadata, so PyPI stays reachable
+RUN pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple \
+        torch==2.5.1+cpu torchvision==0.20.1+cpu \
     && pip install -r requirements-cpu.txt \
     && pip install --no-deps --force-reinstall opencv-python-headless==5.0.0.93
 
