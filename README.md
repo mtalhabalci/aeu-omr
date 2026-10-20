@@ -57,16 +57,6 @@ Bu depoda bulunmayanlar:
 - **Eğitim verisi:** SymbTr'den türetilmiştir. SymbTr CC BY-NC-SA 4.0 lisanslıdır; veri `convert_symbtr.py` ile
   [SymbTr](https://github.com/MTG/SymbTr) 2.0.0'dan yeniden üretilebilir.
 
-## Atıf
-
-Bu çalışma Muhammed Talha BALCI'nın Bandırma Onyedi Eylül Üniversitesi Lisansüstü Eğitim Enstitüsü Bilgisayar
-Mühendisliği Anabilim Dalı'nda Doç. Dr. İlyas ÖZER danışmanlığında ve Prof. Dr. Alper AKDENİZ ikinci danışmanlığında
-hazırladığı "Türk Müzik Notasyonunda Optik Müzik Okuma" başlıklı yüksek lisans tezinden üretilmiştir. Tezden
-türetilen makale hazırlanmaktadır:
-
-> Balcı, M. T., Özer, İ. ve Akdeniz, A. Batı Müziği Notası İçin Eğitilmiş Bir Optik Müzik Okuyucusunun Basılı Türk
-> Müziği Notasına Uyarlanması (hazırlanıyor).
-
 ## Lisans
 
 [AGPL-3.0](LICENSE). Lisans homr'dan devralınmıştır.
