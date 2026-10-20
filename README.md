@@ -63,13 +63,5 @@ Bu depoda bulunmayanlar:
 
 ## Teşekkür
 
-Bu çalışma homr olmadan yapılamazdı. homr'un kodu, porte bulan bölütleme ağı ve Batı müziği notasıyla eğitilmiş
-ağırlıkları bu çalışmanın temelidir. Bu sistemi açık kaynak olarak paylaşan ve Türk müziği uyarlamasının
-kullanılmasına izin veren homr'un yazarı [liebharc](https://github.com/liebharc)'a ve homr'a katkıda bulunan herkese
-teşekkür ederiz. homr da iki açık kaynak çalışmanın üzerine kuruludur:
-
-- **Bölütleme:** [oemer](https://github.com/BreezeWhite/oemer)
-- **Transformer modeli:** [Polyphonic-TrOMR](https://github.com/NetEase/Polyphonic-TrOMR)
-
-Bu çalışmalara ve eserlerin sembolik ve basılı hâllerini açık olarak paylaşan SymbTr derlemine (Müzik Teknolojileri
-Grubu, Universitat Pompeu Fabra) de teşekkür ederiz.
+[homr](https://github.com/liebharc/homr), [oemer](https://github.com/BreezeWhite/oemer) ve
+[Polyphonic-TrOMR](https://github.com/NetEase/Polyphonic-TrOMR) projelerine teşekkür ederim.
