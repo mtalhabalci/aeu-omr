@@ -53,7 +53,7 @@ homr'un kendi kurulum ve kullanım belgesi [README_homr.md](README_homr.md) dosy
 
 ## Çalışan sürüm
 
-Musiki Akademisi uygulamasının nota okuma servisi bu depodaki `makam-finetune` dalının kodundan çalışır. Model
+Musiki Akademisi uygulamasının nota okuma servisi bu depodaki `aeu-omr` dalının kodundan çalışır. Model
 `v24+kurallar-2026-10-16`'dır: tez modeli v20'nin eğitim karışımına 1.600 hakemli el yazısı porte eklenmiştir.
 
 Bu depoda bulunmayanlar:
