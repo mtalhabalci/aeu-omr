@@ -9,8 +9,7 @@ değişir.
 
     docker build -t nota-okuma:v24 .
 
-İmaj yaklaşık 2 GB tutar (PyTorch'un işlemci sürümü ~0,8 GB, ağırlıklar 0,38 GB). İlk derleme paket indirmesiyle
-birkaç dakika sürer.
+İmaj 1,3 GB tutar (ağırlıklar 0,38 GB). İlk derleme paket indirmesiyle birkaç dakika sürer.
 
 ## Compose
 
@@ -63,16 +62,21 @@ belleğe yüklenir; sağlık ucu yükleme bitince cevap verir. İmajdaki `HEALTH
 
 ## Kaynak kullanımı
 
-20.10.2026'da bu klasördeki kodla ölçüldü. Ekran kartı gizlendi, 4 iş parçacığı kullanıldı. İşlemci Ryzen 5 7600X
-(masaüstü). Okuma HTTP üzerinden, eşzamanlı istekle yapıldı.
+Okumalar HTTP üzerinden, eşzamanlı istekle yapıldı; ikisinde de 4 iş parçacığı kullanıldı.
 
-| İş | Süre |
-|---|---|
-| Açılış (model yükleme) | 7–10 sn |
-| 1 sayfa, 8 porte (taranmış nihavend) | 21–22 sn |
-| 3 sayfa, 27 porte (dizgi peşrev) | 85–90 sn (sayfa başına ~29 sn, porte başına ~3,1 sn) |
-| Tepe bellek | 2,1 GB |
+- **Masaüstü (20.10.2026):** Bu klasördeki kodla ölçüldü. İşlemci Ryzen 5 7600X, ekran kartı gizlendi. Docker'sız
+  çalıştı; tepe bellek süreç başına ölçüldü.
+- **Sunucu (21.10.2026):** Keyubu VDS, sanal Ryzen 9 5950X (12 iş parçacığı). Docker imajı `nota-okuma:v24`, konteyner
+  sınırı 4 CPU / 4 GB.
 
-- **Sunucuda süre:** Sanal sunucunun çekirdekleri masaüstü işlemciden yavaş olabilir. Süreler 1,5–2 katına çıkabilir.
+| İş | Masaüstü | Sunucu |
+|---|---|---|
+| Açılış (model yükleme) | 7–10 sn | ~11 sn |
+| Boştaki bellek | - | 905 MB |
+| 1 sayfa | 21–22 sn (8 porte, taranmış nihavend) | 24,6 sn (1600×1873 PNG) |
+| 3 sayfa, 27 porte (dizgi peşrev) | 85–90 sn (sayfa başına ~29 sn, porte başına ~3,1 sn) | - |
+| Tepe bellek | 2,1 GB | 1,58 GB |
+
+- **Sunucuda süre:** Sanal sunucu masaüstüyle hemen hemen aynı hızda okur. Zaman aşımı önerisi bu yüzden pay bırakır.
 - **Bellek:** Sayfalar sırayla okunduğundan bellek sayfa sayısıyla büyümez. 4 GB sınır yeterli pay bırakır.
 - **İşlemci:** Okuma sırasında verilen 4 çekirdek dolar; boştayken işlemci kullanılmaz.
