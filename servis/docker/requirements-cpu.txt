@@ -1,0 +1,35 @@
+# What the reading service imports, pinned to the versions it runs with on the development machine
+# (Python 3.10). torch and torchvision come first from the CPU index (see the Dockerfile), so nothing here
+# pulls the CUDA wheels.
+fastapi==0.143.0
+starlette==1.7.0
+uvicorn==0.54.0
+python-multipart==0.0.32
+pydantic==2.13.5
+pydantic_core==2.46.5
+opentelemetry-api==1.45.1
+numpy==1.26.4
+scipy==1.15.1
+opencv-python==4.10.0.84
+opencv-python-headless==5.0.0.93
+pymupdf==1.28.2
+onnxruntime==1.23.2
+timm==1.0.29
+x-transformers==2.16.1
+einops==0.8.2
+einx==0.4.3
+safetensors==0.8.0
+huggingface_hub==1.31.0
+albumentations==2.0.8
+albucore==0.0.24
+musicxml==1.4
+shapely==2.1.2
+rapidocr==3.9.2
+pyclipper==1.4.0
+omegaconf==2.3.1
+Pillow==9.3.0
+requests==2.31.0
+PyYAML==6.0.1
+tqdm==4.66.4
+loguru==0.7.3
+colorlog==6.12.0
