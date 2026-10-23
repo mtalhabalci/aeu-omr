@@ -9,6 +9,11 @@
                             jobs live in memory only, so a restart loses them (GET answers 404, the app sends again)
                             Besides the MusicXML the answer carries "porteler" (per staff: page, box on the page image,
                             first and last measure) and "sayfaResimleri" (per page: image size, DPI, scan or typeset)
+                            and "baslikBilgisi": the title block read by OCR above the first staff of the first page
+                            that has one (eserAdi, makam, form, usul, bestekar, gufte, yore, kaynak as printed, null
+                            when not found; guven and kutu per field found, kutu in that page's pixels like the staff
+                            boxes; sayfa); null, with a warning, when it could not be read. The same fields go into
+                            the MusicXML (<work-title>, <creator>, <miscellaneous-field>).
     GET  /v1/omr/{isId}     {"durum": "isleniyor" | "tamam" | "hata" | "iptal", "islenenSayfa", "islenenPorte", ...}
     DELETE /v1/omr/{isId}   a running job stops before its next staff and stays as durum "iptal" (202); a finished
                             one is removed (200)
@@ -44,6 +49,8 @@ from fastapi.responses import JSONResponse
 
 from homr import main as reader_main
 from homr.autocrop import autocrop_box
+from homr.baslik_okuyucu import prepare as prepare_header_reader
+from homr.baslik_okuyucu import read_header
 from homr.main import ProcessingConfig, detect_staffs_in_image
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.staff_parsing import prepare_staff_image
@@ -65,10 +72,11 @@ MAX_BYTES = 20 * 1024 * 1024
 PAGE_WIDTH = 1920  # a pdf page is rendered at this width, as for the page exams
 LOW_CONFIDENCE = 0.5
 TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
+XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
 
 
 def _no_title(*_: object) -> Future:
-    """The title is not read (it would need OCR); the app keeps its own."""
+    """The staff finder's own title guess is not made; the title block is read on its own (read_header)."""
     done: Future = Future()
     done.set_result("")
     return done
@@ -180,6 +188,23 @@ class Reader:
         self.lock = threading.Lock()
         self.processing = ProcessingConfig(False, False, False, False, -1,
                                            os.environ.get("OMR_GPU_SEGMENTASYON") == "1")
+        try:  # the title block's OCR loads now rather than in the first reading; a failure shows in that reading
+            prepare_header_reader()
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    @staticmethod
+    def _title_block(first: tuple | None, warnings: list[str]) -> dict | None:
+        """The title block above the first staff of the first page that has one, its boxes in that page's pixels
+        (as the staff boxes) and the page's number. A failure leaves it out with a warning; the reading goes on."""
+        if first is None:
+            return None
+        page_no, pixels, top = first
+        try:
+            return {**read_header(pixels, top).as_dict(), "sayfa": page_no}
+        except Exception:  # noqa: BLE001
+            warnings.append("Başlık bilgisi (eser adı, makam, usul, bestekâr) okunamadı.")
+            return None
 
     def _page_image(self, path: str, scratch: str, page_no: int) -> tuple[str, float | None, str]:
         """The page as an image file, its resolution in DPI (a PDF page is rendered; a photo has none) and where it
@@ -205,6 +230,7 @@ class Reader:
         page_info: list[dict] = []
         staff_boxes: list[tuple[int, list[int]]] = []
         tempo_found: list[tuple[int, object]] = []  # (staff number from 0, TempoMark)
+        header_page: tuple | None = None  # (page number, page image, top of its first staff)
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -246,6 +272,8 @@ class Reader:
                                                   round(box[0] + staff.max_x * scale_x),
                                                   round(box[1] + staff.max_y * scale_y)]))
                     staffs += 1
+                if header_page is None and len(staff_boxes) > page_first:
+                    header_page = (page_no, page_pixels, min(b[1] for _, b in staff_boxes[page_first:]))
                 gray_page = cv2.cvtColor(page_pixels, cv2.COLOR_BGR2GRAY)
                 for mark in read_tempo_marks(gray_page, [tuple(b) for _, b in staff_boxes[page_first:]]):
                     tempo_found.append((page_first + mark.staff, mark))
@@ -255,22 +283,22 @@ class Reader:
                 raise ReadError(422, "porte_bulunamadi",
                                 "Görüntüde okunabilir porte bulunamadı. Sayfanın tamamı, düz ve net çekilmiş "
                                 "olmalı.")
-            out = os.path.join(scratch, "sonuc.musicxml")
+            header = self._title_block(header_page, warnings)
 
             def write(tempo_marks: dict) -> tuple[str, dict[int, float], list[tuple[int, int]]]:
                 confidence: dict[int, float] = {}
                 staff_measures: list[tuple[int, int]] = []
                 args = XmlGeneratorArguments(software=SOFTWARE, measure_confidence=confidence,
-                                             staff_measures=staff_measures, tempo_marks=tempo_marks)
-                generate_xml(args, [voice], "").write(out)
-                with open(out, encoding="utf-8") as handle:
-                    return handle.read(), confidence, staff_measures
+                                             staff_measures=staff_measures, tempo_marks=tempo_marks, header=header)
+                # built as text, not written to a file: the library writes files in the system's code page, which
+                # would garble the title block's Turkish letters on Windows
+                return XML_DECLARATION + generate_xml(args, [voice], "").to_string(), confidence, staff_measures
 
             musicxml, confidence, staff_measures = write({})
             tempos = tempo_measures(tempo_found, staff_boxes, staff_measures)
             if tempos:
                 # the measures are known only once written: write again with the tempo marks in their measures
-                # (a range with a plain hyphen: the XML file is written in the system's code page)
+                # (a range with a plain hyphen)
                 musicxml, confidence, staff_measures = write(
                     {t["olcu"]: (t["birim"], t["noktali"], t["deger"],
                                  "{}-{}".format(*t["aralik"]) if t["aralik"] else None) for t in tempos})
@@ -290,7 +318,7 @@ class Reader:
         return {"musicxml": musicxml, "modelVersion": MODEL_VERSION, "olcuGuven": measures, "uyarilar": warnings,
                 "sureyiTutmayanOlculer": off,
                 "porteSayisi": staffs, "sayfaSayisi": len(pages), "toplamSayfa": total, "sayfalar": pages,
-                "porteler": staff_list, "sayfaResimleri": page_info, "tempolar": tempos,
+                "porteler": staff_list, "sayfaResimleri": page_info, "tempolar": tempos, "baslikBilgisi": header,
                 "sureMs": round((time.perf_counter() - start) * 1000)}
 
 

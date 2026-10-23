@@ -1,5 +1,6 @@
 import copy
 import math
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from fractions import Fraction
@@ -104,6 +105,7 @@ class XmlGeneratorArguments:
         measure_confidence: dict[int, float] | None = None,
         staff_measures: list[tuple[int, int]] | None = None,
         tempo_marks: dict[int, tuple] | None = None,
+        header: dict | None = None,
     ):
         self.large_page = large_page
         self.metronome = metronome
@@ -119,14 +121,44 @@ class XmlGeneratorArguments:
         # written tempo marks read off the page: measure number -> (beat unit as MusicXML names it, dotted,
         # beats per minute); each becomes a <metronome> with its <sound tempo> at the start of that measure
         self.tempo_marks = tempo_marks or {}
+        # the title block read off the first page (homr.baslik_okuyucu.Header.as_dict(): eserAdi, bestekar, gufte,
+        # makam, form, usul, yore, kaynak; a missing or empty field is left out): the work's name becomes
+        # <work-title>, composer and lyricist <creator>s, the rest <miscellaneous-field>s
+        self.header = header or {}
+
+
+# header fields written as <miscellaneous-field name="..."> (MusicXML has no element of its own for them)
+MISCELLANEOUS_FIELDS = ("makam", "form", "usul", "yore", "kaynak")
+
+
+def _header_text(header: dict, key: str) -> str | None:
+    """A header field as text for the file: control characters, which XML 1.0 does not allow, are dropped."""
+    value = header.get(key)
+    if not isinstance(value, str):
+        return None
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", value).strip()
+    return value or None
 
 
 def build_identification(args: XmlGeneratorArguments) -> mxl.XMLIdentification:
-    """Identification/encoding so validators and apps (e.g. MuseScore) can attribute the file."""
+    """Identification/encoding so validators and apps (e.g. MuseScore) can attribute the file, with the title
+    block's composer and lyricist (<creator>, before <encoding>) and its makam, form, usul, region and source
+    (<miscellaneous>, after it), as the schema orders them."""
     ident = mxl.XMLIdentification()
+    for key, kind in (("bestekar", "composer"), ("gufte", "lyricist")):
+        value = _header_text(args.header, key)
+        if value:
+            ident.add_child(mxl.XMLCreator(value_=value, type=kind))
     enc = mxl.XMLEncoding()
     enc.add_child(mxl.XMLSoftware(value_=args.software))
     ident.add_child(enc)
+    fields = [(key, _header_text(args.header, key)) for key in MISCELLANEOUS_FIELDS]
+    if any(value for _, value in fields):
+        miscellaneous = mxl.XMLMiscellaneous()
+        for key, value in fields:
+            if value:
+                miscellaneous.add_child(mxl.XMLMiscellaneousField(value_=value, name=key))
+        ident.add_child(miscellaneous)
     return ident
 
 
@@ -134,7 +166,7 @@ def generate_xml(
     args: XmlGeneratorArguments, staffs: list[list[EncodedSymbol]], title: str
 ) -> mxl.XMLElement:
     root = mxl.XMLScorePartwise(version="4.0")
-    root.add_child(build_work(title))
+    root.add_child(build_work(_header_text(args.header, "eserAdi") or title))
     root.add_child(build_identification(args))
     root.add_child(build_defaults(args))
     has_two_staves_by_part = [_voice_has_two_staves(staff) for staff in staffs]
