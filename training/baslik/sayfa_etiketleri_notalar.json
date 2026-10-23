@@ -1,0 +1,164 @@
+{
+ "aciklama": "Visually labelled by the assistant (Claude) from the header crops and contact sheets on 2026-10-23, to be checked by Talha. Every field as the page PRINTS it, not as SymbTr's file name gives it; null = not printed.",
+ "kurallar": [
+  "values as printed (case and accents; where an accent could not be told at this resolution, the plain letter)",
+  "label words (Usulu:, Muzik:, Beste:, Soz:) and life dates such as (1890-1942) are left out",
+  "eser_adi: the work's printed name: a lyric title when one is printed (brackets or quotes dropped), otherwise the heading line; an instrumental work's name is its heading, e.g. RAST PESREV",
+  "makam and form: from the heading line; form is the printed form word(s) after the makam",
+  "kaynak: the publisher or archive line(s), joined with a space; catalogue numbers (TSM Repertuar No, archive numbers) are left out",
+  "Soz ve Muzik: X / Gufte ve Beste: X gives X as both bestekar and gufte",
+  "okunaksiz: fields printed but not readable with confidence; they are not scored"
+ ],
+ "etiketler": {
+  "notaarsivleri/acemasiran--sazsemaisi--aksaksemai----misirli_udi_ibrahim_efendi": {
+   "makam": "ACEMAŞÎRAN", "form": "SAZ SEMÂÎSİ", "usul": "AKSAK SEMÂÎ",
+   "eser_adi": "ACEMAŞÎRAN SAZ SEMÂÎSİ", "bestekar": "ÛDÎ İBRAHİM EFENDİ", "gufte": null, "kaynak": null},
+  "notaarsivleri/arazbarbuselik--sazsemaisi--aksaksemai----refik_fersan": {
+   "makam": "ARAZBARBUSELİK", "form": "SAZ SEMAÎSİ", "usul": "Aksak Semai",
+   "eser_adi": "ARAZBARBUSELİK SAZ SEMAÎSİ", "bestekar": "Refik Fersan", "gufte": null, "kaynak": null,
+   "not": "typewriter, letter-spaced heading"},
+  "notaarsivleri/bestenigar--sazsemaisi--aksaksemai----tanburi_cemil_bey": {
+   "makam": "BESTENİGÂR", "form": "SAZ SEMÂİSİ", "usul": "AKSAK SEMÂİ",
+   "eser_adi": "BESTENİGÂR SAZ SEMÂİSİ", "bestekar": "TANBÛRİ CEMİL BEY", "gufte": null, "kaynak": null},
+  "notaarsivleri/evic--sazsemaisi--aksaksemai----muallim_ismail_hakki_bey": {
+   "makam": "EVC", "form": "SAZ SEMÂİSİ", "usul": "AKSAK SEMÂÎ",
+   "eser_adi": "EVC SAZ SEMÂİSİ", "bestekar": "İsmail Hakkı Bey", "gufte": null, "kaynak": null},
+  "notaarsivleri/hicaz--sazsemaisi--aksaksemai----refik_talat_alpman": {
+   "makam": "HİCÂZ", "form": "SAZ SEMÂÎSİ", "usul": "Aksak Semâi",
+   "eser_adi": "HİCÂZ SAZ SEMÂÎSİ", "bestekar": "Refik Talât ALPMAN", "gufte": null, "kaynak": null},
+  "notaarsivleri/huzzam--sazsemaisi--aksaksemai----gazi_giray_han": {
+   "makam": "HÜZZAM", "form": "SAZ SEMAİ", "usul": null,
+   "eser_adi": "HÜZZAM SAZ SEMAİ", "bestekar": "Tatar Gazi Ğiray Han", "gufte": null, "kaynak": null,
+   "not": "no usul printed; the composer stands on the heading's line, to its right"},
+  "notaarsivleri/isfahan--pesrev--devrikebir----tanburi_cemil_bey": {
+   "makam": "ISFAHAN", "form": "PEŞREVİ", "usul": "DEVR-İ KEBİR",
+   "eser_adi": "ISFAHAN PEŞREVİ", "bestekar": "TANBÛRİ CEMİL BEY", "gufte": null, "kaynak": null},
+  "notaarsivleri/karcigar--pesrev--cifteduyek----tatyos_efendi": {
+   "makam": "KARCIĞAR", "form": "PEŞREVİ", "usul": "Çifte Düyek",
+   "eser_adi": "KARCIĞAR PEŞREVİ", "bestekar": "Tatyos Efendi", "gufte": null, "kaynak": null},
+  "notaarsivleri/kurdilihicazkar--sazsemaisi--aksaksemai----tatyos_efendi": {
+   "makam": "KÜRDÎLİ-HİCAZKÂR", "form": "SAZ SEMÂÎSİ", "usul": "Aksak Semâi",
+   "eser_adi": "KÜRDÎLİ-HİCAZKÂR SAZ SEMÂÎSİ", "bestekar": "Kemâni Tatyos", "gufte": null, "kaynak": null},
+  "notaarsivleri/mahur--pesrev--muhammes----tanburi_cemil_bey": {
+   "makam": "MÂHÛR", "form": "PEŞREVİ", "usul": "Muhammes",
+   "eser_adi": "MÂHÛR PEŞREVİ", "bestekar": "Tanbûri Cemil Bey", "gufte": null, "kaynak": null},
+  "notaarsivleri/nikriz--sirto--nimsofyan----refik_fersan": {
+   "makam": "NİKRÎZ", "form": "SİRTO", "usul": "NİM SOFYAN",
+   "eser_adi": "NİKRÎZ SİRTO", "bestekar": "REFİK FERSAN", "gufte": null, "kaynak": null},
+  "notaarsivleri/rast--sazsemaisi--aksaksemai----benli_hasan_aga": {
+   "makam": "RAST", "form": "SAZ SEMÂİSİ", "usul": "AKSAK SEMÂİ",
+   "eser_adi": "RAST SAZ SEMÂİSİ", "bestekar": "BENLİ HASAN AĞA", "gufte": null, "kaynak": null},
+  "sarkilarnotalar/evic--agirsemai--aksaksemai--ben_aglar_idim--tanburi_ali_efendi": {
+   "makam": "EVC", "form": "AĞIR SEMÂÎ", "usul": "AKSAK SEMÂİ",
+   "eser_adi": "BEN AĞLAR İDİM HER GECE OL YÂRİM UYURDU", "bestekar": "TANBÛRÎ ALİ EFENDİ", "gufte": null,
+   "kaynak": "TRT MÜZİK DAİRESİ YAYINLARI",
+   "not": "the lyric title is printed in brackets under the heading EVC AGIR SEMAI; also TURK SAN'AT MUZIGI No: 98"},
+  "sarkilarnotalar/ferahnak--sarki--aksak--bir_nigahin--tanburi_cemil_bey": {
+   "makam": "EVİÇ", "form": "ŞARKI", "usul": "Aksak",
+   "eser_adi": "EVİÇ ŞARKI", "bestekar": "Tanbûri Cemil Bey", "gufte": null, "kaynak": null,
+   "not": "typewriter; the page prints EVIC, the file name says ferahnak; no lyric title printed"},
+  "sarkilarnotalar/hicaz--beste--lenkfahte--baktikca_husn_u--suphi_ezgi": {
+   "makam": "HİCAZ", "form": "NAKIŞ BESTE", "usul": "LENKFAHTE",
+   "eser_adi": "BAKTIKÇA HÜSN Ü ÂNINA", "bestekar": "SUBHİ EZGİ", "gufte": null,
+   "kaynak": "TRT MÜZİK DAİRESİ YAYINLARI", "not": "also TSM REPERTUAR SIRA No:1797"},
+  "sarkilarnotalar/hicazkar--beste--yuruksemai--bulbul_gibi--zekai_dede": {
+   "makam": "HİCAZKÂR", "form": "YÜRÜK SEMÂÎ", "usul": "YÜRÜK SEMÂİ",
+   "eser_adi": "Bülbül gibi pür oldu cihan nağmelerimden", "bestekar": "HAFIZ ZEKÂİ DEDE EFENDİ", "gufte": null,
+   "kaynak": null, "not": "the composer runs over two lines: BESTE: HAFIZ ZEKAI / DEDE EFENDI"},
+  "sarkilarnotalar/huzzam--agirsemai--agir_aksaksemai--kurban_olayim--haci_faik_bey": {
+   "makam": "HÜZZÂM", "form": "ŞARKI", "usul": "Aksak Semâi",
+   "eser_adi": "KURBÂN OLAYIM GAMZENE BİR KEZ NAZAR EYLE", "bestekar": "Hacı Fâik Bey", "gufte": null,
+   "kaynak": null, "not": "SOZ : - (lyricist unknown)"},
+  "sarkilarnotalar/karcigar--fantezi--turkaksagi--tanburamin_ince--sadettin_kaynak": {
+   "makam": "KARCIĞAR", "form": "ŞARKI", "usul": "Türk Aksağı",
+   "eser_adi": "TANBURAMIN İNCE KIVRAK BELİ VAR", "bestekar": "Sâdettin KAYNAK", "gufte": "Refik Ahmet SEVENGİL",
+   "kaynak": "TRT MÜZİK DAİRESİ BAŞKANLIĞI YAYINLARI", "not": "source on two lines; also TSM Repertuar No : 10590"},
+  "sarkilarnotalar/kurdilihicazkar--sarki--agiraksak--bu_gonul--sari_onnik": {
+   "makam": "KÜRDİLİ HİCAZKÂR", "form": "ŞARKI", "usul": "AĞIRCA AKSAK",
+   "eser_adi": "BU GÖNÜL NE GÜLDE", "bestekar": "SARI ONNİK", "gufte": null, "kaynak": null,
+   "not": "label BESTEKARI on the line above the name"},
+  "sarkilarnotalar/mahur--beste--devrikebir--ta-be-key_sinemde--dilhayat_kalfa": {
+   "makam": "MÂHUR", "form": "BESTE", "usul": "Devri kebir",
+   "eser_adi": "Tâ-be-key sinemde câ etmek cefâ vü kineye", "bestekar": "Dilhayat Kalfa", "gufte": null,
+   "kaynak": null, "not": "HANDWRITTEN; the usul is cut by the page's left edge; archive number 10539"},
+  "sarkilarnotalar/muhayyer--beste--darbifetih--hengam-i_safadir--zekai_dede": {
+   "makam": "ŞEVKEFZÂ", "form": "ŞARKI", "usul": "Ağır Aksak semâi",
+   "eser_adi": "ŞEVKEFZÂ ŞARKI", "bestekar": "Çehlevendin(?), HAFIZ ABDULLAH", "gufte": "Vâsıf", "kaynak": null,
+   "okunaksiz": ["bestekar"],
+   "not": "HANDWRITTEN; a different work from its file name (Sevkefza Sarki, not a muhayyer beste); the composer's first word is unclear"},
+  "sarkilarnotalar/rast--kanto--nimsofyan--darildin_mi--": {
+   "makam": "RAST", "form": "KANTO", "usul": "Nim Sofyan",
+   "eser_adi": "DARILDIN MI GÜLÜM", "bestekar": null, "gufte": null, "kaynak": null,
+   "not": "typewriter; the usul stands at the first staff's top, under the clef; archive number 3173"},
+  "sarkilarnotalar/saba--ilahi--duyek--git_ey--munir_nurettin_selcuk": {
+   "makam": "SABÂ", "form": "İLÂHÎ", "usul": "Düyek",
+   "eser_adi": "Git ey akan göz yaşım...", "bestekar": "M. Nûrettin Selçuk", "gufte": "Hz. Mevlâna", "kaynak": null,
+   "not": "HANDWRITTEN; also Manzum tercemesi: M. Nuri Gencosman; numbers 228/14209"},
+  "sarkilarnotalar/segah--ilahi--sofyan--sordum_sari--": {
+   "makam": "Segâh", "form": "İlâhi", "usul": "Düyek",
+   "eser_adi": "SORDUM SARI ÇİÇEĞE", "bestekar": "Tahir Karagöz", "gufte": "Yûnus Emre", "kaynak": null,
+   "not": "HANDWRITTEN; the page prints Duyek, the file name says sofyan; a name top left (the copyist?) is not a field"},
+  "sarkilarnotalar/sehnaz--agirsemai--senginsemai--didem_yuzune--yahya_nazim_celebi": {
+   "makam": "ŞEHNAZ", "form": "ŞARKI", "usul": "SENGİN SEMÂİ",
+   "eser_adi": "DİDEM YÜZÜNE NAZIR", "bestekar": "NAZİM YAHYA EFENDİ", "gufte": "NAZİM YAHYA EFENDİ",
+   "kaynak": "ANKARA RADYOSU REPERTUVAR KURULU",
+   "not": "typewriter; SOZ VE MUZIK: on the line above the name; archive number 3334"},
+  "sarkilarnotalar/suzinak--sarki--agiraksak--sonbahar_goncasi_mi--mustafa_nafiz_irmak": {
+   "makam": "SÛZNÂK", "form": "ŞARKI", "usul": "Ağır Aksak",
+   "eser_adi": "Sonbahar goncası mı göğsünün üstündeki gül?", "bestekar": "Mustafa Nâfiz Irmak",
+   "gufte": "Mustafa Nâfiz Irmak", "kaynak": null,
+   "not": "typewriter; Gufte ve Beste: on the line above the name; Suznak is a spelling of suzinak"},
+  "sarkilarnotalar/ussak--fantezi--sofyan--soyle_sevgili--munir_nurettin_selcuk": {
+   "makam": "UŞŞAK", "form": "ŞARKI", "usul": "DEĞİŞMELİ NİM SOFYAN - SOFYAN",
+   "eser_adi": "SÖYLE SEVGİLİ", "bestekar": "MÜNİR NURETTİN SELÇUK", "gufte": "VECDİ BİNGÖL", "kaynak": null,
+   "not": "lettered by hand; the heading is USSAK SARKI \"FANTEZI\"; the usul changes (nim sofyan, sofyan); archive number 10200"},
+  "uskudar/evic--sazsemaisi--aksaksemai----sedat_oztoprak": {
+   "makam": "EVÇ", "form": "SAZ SEMÂİSİ", "usul": "Aksak Semâi",
+   "eser_adi": "EVÇ SAZ SEMÂİSİ", "bestekar": "Udi Sedat Bey", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/ferahnak--sazsemaisi--aksaksemai----leon_hanciyan": {
+   "makam": "FERAHNÂK", "form": "SAZ SEMÂİSİ", "usul": "Aksak semâi",
+   "eser_adi": "FERAHNÂK SAZ SEMÂİSİ", "bestekar": "Leon HANCİYAN", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/hicazkar--sirto--nimsofyan----kemani_sebuh": {
+   "makam": "HİCAZKÂR", "form": "SİRTO", "usul": "Nim Sofyan",
+   "eser_adi": "HİCAZKÂR SİRTO", "bestekar": "Kemani SEBUH", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI", "not": "(Yürük) under the usul"},
+  "uskudar/huzzam--sazsemaisi--aksaksemai----udi_nevres_bey": {
+   "makam": "HÜZZAM", "form": "SAZ SEMÂİSİ", "usul": "Aksak Semâi",
+   "eser_adi": "HÜZZAM SAZ SEMÂİSİ", "bestekar": "Ûdi Nevres Bey", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/muhayyerkurdi--sazsemaisi--aksaksemai----sadi_isilay": {
+   "makam": "MUHAYYERKÜRDÎ", "form": "SAZ SEMÂİSİ", "usul": "Aksaksemâi",
+   "eser_adi": "MUHAYYERKÜRDÎ SAZ SEMÂİSİ", "bestekar": "Sadi IŞILAY", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI", "not": "the source block stands on the right here"},
+  "uskudar/rast--pesrev--muhammes----tatyos_efendi": {
+   "makam": "RAST", "form": "PEŞREV", "usul": "Muhammes",
+   "eser_adi": "RAST PEŞREV", "bestekar": "Kemâni Tatyos Efendi", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/sedaraban--sazsemaisi--aksaksemai----tanburi_cemil_bey": {
+   "makam": "ŞEDARABAN", "form": "SAZ SEMAÎSİ", "usul": "Aksak semaî",
+   "eser_adi": "ŞEDARABAN SAZ SEMAÎSİ", "bestekar": "Tanburi Cemil BEY", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/segah--sazsemaisi--aksaksemai----hizir_aga": {
+   "makam": "SEGÂH", "form": "SAZ SEMÂİSİ", "usul": "Aksaksemâi",
+   "eser_adi": "SEGÂH SAZ SEMÂİSİ", "bestekar": "Hızır Ağa", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/sehnaz--longa--sofyan----santuri_ethem_efendi": {
+   "makam": "ŞEHNAZ", "form": "LONGA", "usul": "Nimsofyan",
+   "eser_adi": "ŞEHNAZ LONGA", "bestekar": "Santuri Ethem Efendi", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI", "not": "the page prints Nimsofyan, the file name says sofyan"},
+  "uskudar/sultaniyegah--sazsemaisi--aksaksemai----kanuni_haci_arif_bey": {
+   "makam": "SULTANİYEGÂH", "form": "SAZ SEMAÎSİ", "usul": "Aksak semaî",
+   "eser_adi": "SULTANİYEGÂH SAZ SEMAÎSİ", "bestekar": "Kanuni Hacı Arif BEY", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/suzinak--pesrev--cenber----tatyos_efendi": {
+   "makam": "SUZİNÂK", "form": "PEŞREVİ", "usul": "Çenber",
+   "eser_adi": "SUZİNÂK PEŞREVİ", "bestekar": "Tatyos Efendi", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"},
+  "uskudar/ussak--sazsemaisi--aksaksemai----neyzen_aziz_dede": {
+   "makam": "UŞŞAK", "form": "SAZ SEMÂİSİ", "usul": "Aksak Semâi",
+   "eser_adi": "UŞŞAK SAZ SEMÂİSİ", "bestekar": "Neyzen Aziz Dede", "gufte": null,
+   "kaynak": "EMİN ONGAN ÜSKÜDAR MÛSİKİ CEMİYETİ NEŞRİYÂTI"}
+ }
+}
