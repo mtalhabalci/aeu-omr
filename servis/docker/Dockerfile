@@ -24,6 +24,14 @@ RUN pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-u
     && pip install -r requirements-cpu.txt \
     && pip install --no-deps --force-reinstall opencv-python-headless==5.0.0.93
 
+# the OCR models of the title-block reader (RapidOCR's PP-OCRv6 detector and recogniser, the angle classifier) go
+# into the package's models folder, where RapidOCR looks; loading the reader once checks them against RapidOCR's
+# checksums and downloads any that hazirla.py did not bring, so a running container never fetches a model
+COPY ocr_modelleri/ /tmp/ocr_modelleri/
+RUN python -c "import glob, os, shutil, rapidocr; d = os.path.join(os.path.dirname(rapidocr.__file__), 'models'); os.makedirs(d, exist_ok=True); [shutil.copy(f, d) for f in glob.glob('/tmp/ocr_modelleri/*.onnx')]" \
+    && python -c "from rapidocr import RapidOCR; RapidOCR(params={'Global.log_level': 'warning'})" \
+    && rm -rf /tmp/ocr_modelleri
+
 COPY kod/ /app/
 RUN useradd --create-home --uid 10001 okuyucu && chown -R okuyucu /app
 USER okuyucu

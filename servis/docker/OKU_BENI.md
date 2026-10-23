@@ -42,6 +42,15 @@ Uç noktalar yereldeki servisle aynıdır (`POST /v1/omr`, `?kuyruk=1`, `GET /v1
 `POST /v1/sayfa-sayisi`). Sağlık: `GET /v1/saglik` → `{"modelVersion": "...", "cihaz": "cpu"}`. Model açılışta
 belleğe yüklenir; sağlık ucu yükleme bitince cevap verir. İmajdaki `HEALTHCHECK` açılışa 120 saniye tanır.
 
+## Başlık bilgisi (OCR)
+
+Yanıttaki `baslikBilgisi` (eser adı, makam, form, usul, bestekâr, güfte, yöre, kaynak) ilk sayfanın ilk portesinin
+üstünden RapidOCR ile okunur. OCR modelleri (`PP-OCRv6_det_small.onnx`, `PP-OCRv6_rec_small.onnx`,
+`ch_ppocr_mobile_v2.0_cls_mobile.onnx`, toplam ~32 MB) `hazirla.py` ile `ocr_modelleri/` klasörüne kopyalanır ve
+imaj kurulurken RapidOCR paketinin `models` klasörüne konur; eksik olan, kurulum sırasında RapidOCR'ın kendi
+adresinden indirilir (sağlama toplamıyla). Çalışan konteyner model indirmez. Başlık okuması sayfa başına ~1 sn sürer
+(masaüstü işlemcide); okunamazsa `baslikBilgisi` `null` olur ve `uyarilar`a bir satır eklenir, okuma sürer.
+
 ## Ortam değişkenleri
 
 | Değişken | Varsayılan | Not |

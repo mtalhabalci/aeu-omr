@@ -1,5 +1,6 @@
 """Assemble the Docker build folder of the reading service: the Dockerfile and pinned requirements from this
-folder, the Python code the service imports, and the weights it reads (which git does not hold).
+folder, the Python code the service imports, the weights it reads (which git does not hold) and the OCR models of
+the title-block reader (ocr_modelleri/, from this machine's RapidOCR; the Dockerfile puts them where RapidOCR looks).
 
     python servis/docker/hazirla.py [out]        out defaults to C:\\projects\\yl\\nota-okuma-imaj
 
@@ -9,6 +10,8 @@ At the end it lists which of its files carry the upstream project's name, which 
 import os
 import shutil
 import sys
+
+import rapidocr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -30,7 +33,12 @@ DATA = [
                  "pytorch_model_1-819bee2ae062dff09fd97af4dfae98dd1709ceb3.pth"),
     # the tempo readers that vote, and the one for ranges
     *(os.path.join("training", "architecture", "tempo", f"tempo_okuyucu_{k}.pt") for k in ("1", "2", "3", "aralik")),
+    # the makam, form and usul names the title-block reader looks for
+    os.path.join(NAME, "baslik_isimleri.json"),
 ]
+# RapidOCR's default models, as the title-block reader loads them (PP-OCRv6 small detector and recogniser, the
+# angle classifier); RapidOCR downloads them on first use, so they are taken from this machine's installation
+OCR_MODELS = ["PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx", "ch_ppocr_mobile_v2.0_cls_mobile.onnx"]
 SKIP_DIRS = {"__pycache__", "ornekler"}
 
 
@@ -57,6 +65,15 @@ for package in PACKAGES:
 for rel in SINGLE:
     code += copy(rel)
 weights = {rel: copy(rel) for rel in DATA}
+ocr_dir = os.path.join(os.path.dirname(rapidocr.__file__), "models")
+os.makedirs(os.path.join(OUT, "ocr_modelleri"))
+for model in OCR_MODELS:
+    src = os.path.join(ocr_dir, model)
+    if not os.path.exists(src):  # the image build downloads what is missing
+        print("OCR modeli yok, imaj kurulurken indirilecek:", model)
+        continue
+    shutil.copy2(src, os.path.join(OUT, "ocr_modelleri", model))
+    weights[os.path.join("ocr_modelleri", model)] = os.path.getsize(src)
 
 named = []
 for folder, _, files in os.walk(OUT):
