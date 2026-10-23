@@ -282,6 +282,33 @@ barline . . . .""".splitlines()
         self.assertNotIn("homr", xml)
         self.assertEqual(confidence, {1: 0.4, 2: 0.8})
 
+    def test_title_block_goes_into_work_and_identification(self) -> None:
+        """The title block read off the page: the work's name in <work-title>, composer and lyricist as <creator>s
+        before <encoding>, makam, form, usul, region and source as <miscellaneous-field>s after it (schema order);
+        empty fields are left out, and without a header nothing is added."""
+        tokens = read_token_lines(
+            """clef_G2 . . . upper
+timeSignature_2/4 . . . .
+note_2 E5 _ _ upper
+barline . . . .""".splitlines()
+        )
+        header = {"eserAdi": "Bülbül gibi pür oldu cihan nağmelerimden", "makam": "Hicazkâr", "form": "Yürük Semâî",
+                  "usul": "Yürük Semâî", "bestekar": "Hafız Zekâi Dede Efendi", "gufte": None, "yore": "",
+                  "kaynak": "TRT Müzik Dairesi Yayınları", "guven": {"makam": 0.9}, "kutu": {"makam": [1, 2, 3, 4]}}
+        root = ET.fromstring(generate_xml(XmlGeneratorArguments(software="Uygulama", header=header), [tokens],
+                                          "").to_string())
+        self.assertEqual(root.findtext("work/work-title"), "Bülbül gibi pür oldu cihan nağmelerimden")
+        identification = root.find("identification")
+        self.assertEqual([child.tag for child in identification], ["creator", "encoding", "miscellaneous"])
+        self.assertEqual([(c.get("type"), c.text) for c in identification.findall("creator")],
+                         [("composer", "Hafız Zekâi Dede Efendi")])
+        self.assertEqual([(f.get("name"), f.text) for f in identification.findall("miscellaneous/miscellaneous-field")],
+                         [("makam", "Hicazkâr"), ("form", "Yürük Semâî"), ("usul", "Yürük Semâî"),
+                          ("kaynak", "TRT Müzik Dairesi Yayınları")])
+        plain = ET.fromstring(generate_xml(XmlGeneratorArguments(software="Uygulama"), [tokens], "Ad").to_string())
+        self.assertEqual(plain.findtext("work/work-title"), "Ad")
+        self.assertEqual([child.tag for child in plain.find("identification")], ["encoding"])
+
     def test_repeats_and_endings_without_empty_measures(self) -> None:
         """A forward repeat opens its measure on the left, the second ending is numbered 2, and a repeat or a
         closing sign that follows a barline makes no measure of its own."""
