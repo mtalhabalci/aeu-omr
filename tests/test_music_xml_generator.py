@@ -309,6 +309,15 @@ barline . . . .""".splitlines()
         self.assertEqual(plain.findtext("work/work-title"), "Ad")
         self.assertEqual([child.tag for child in plain.find("identification")], ["encoding"])
 
+    def test_several_software_names(self) -> None:
+        """The application's name and its model's name, each in a <software> of its own, in the order given."""
+        tokens = read_token_lines("""clef_G2 . . . upper
+note_2 E5 _ _ upper
+barline . . . .""".splitlines())
+        root = ET.fromstring(generate_xml(XmlGeneratorArguments(software=["Uygulama", "AEU-OMR"]), [tokens],
+                                          "").to_string())
+        self.assertEqual([s.text for s in root.findall("identification/encoding/software")], ["Uygulama", "AEU-OMR"])
+
     def test_repeats_and_endings_without_empty_measures(self) -> None:
         """A forward repeat opens its measure on the left, the second ending is numbered 2, and a repeat or a
         closing sign that follows a barline makes no measure of its own."""

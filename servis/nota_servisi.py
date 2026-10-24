@@ -25,9 +25,11 @@ When OMR_ANAHTAR is set, the X-Omr-Anahtar header must equal it.
 The reading is the thesis's final reader: the fine-tuned staff model (v20) with its decoding rules, the makam
 resolver and the MusicXML writer. Staffs are found and cut as training/read_page.py does for the page exams.
 The app is not to show which open-source project the reader grew from, so the file's <software> is OMR_YAZILIM
-and no response names it.
+and no response names it: by default two names, the application's and the model's ("Musiki Akademisi OMR;AEU-OMR",
+Talha 24.10), each written as a <software> of its own.
 
-Environment: OMR_MODEL (weights), OMR_MODEL_SURUM (reported version), OMR_YAZILIM (<software>), OMR_ANAHTAR,
+Environment: OMR_MODEL (weights), OMR_MODEL_SURUM (reported version), OMR_YAZILIM (<software> names, separated by
+";"), OMR_ANAHTAR,
 OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU.
 """
 
@@ -66,7 +68,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.environ.get("OMR_MODEL", os.path.join(
     ROOT, "training", "architecture", "transformer", "pytorch_model_1-819bee2ae062dff09fd97af4dfae98dd1709ceb3.pth"))
 MODEL_VERSION = os.environ.get("OMR_MODEL_SURUM", "v24+kurallar-2026-10-16")
-SOFTWARE = os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR")
+SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
+            if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
 MAX_BYTES = 20 * 1024 * 1024
 PAGE_WIDTH = 1920  # a pdf page is rendered at this width, as for the page exams

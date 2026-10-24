@@ -57,7 +57,7 @@ adresinden indirilir (sağlama toplamıyla). Çalışan konteyner model indirmez
 |---|---|---|
 | `OMR_ANAHTAR` | boş | doluysa her istekte `X-Omr-Anahtar` başlığı aranır |
 | `OMR_MODEL_SURUM` | `v24+kurallar-2026-10-16` | yanıttaki `modelVersion` |
-| `OMR_YAZILIM` | `Musiki Akademisi OMR` | MusicXML `<software>` |
+| `OMR_YAZILIM` | `Musiki Akademisi OMR;AEU-OMR` | MusicXML `<software>`; `;` ile ayrılan her ad ayrı bir `<software>` satırı olur |
 | `OMR_PORT` | `8765` | |
 | `OMP_NUM_THREADS`, `MKL_NUM_THREADS` | `4` | modelin kullandığı iş parçacığı; `cpus` sınırıyla aynı tutun |
 

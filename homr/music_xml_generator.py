@@ -101,7 +101,7 @@ class XmlGeneratorArguments:
         large_page: bool | None = None,
         metronome: int | None = None,
         tempo: int | None = None,
-        software: str = "homr",
+        software: str | list[str] = "homr",
         measure_confidence: dict[int, float] | None = None,
         staff_measures: list[tuple[int, int]] | None = None,
         tempo_marks: dict[int, tuple] | None = None,
@@ -110,7 +110,8 @@ class XmlGeneratorArguments:
         self.large_page = large_page
         self.metronome = metronome
         self.tempo = tempo
-        # the name written to <encoding><software>; an application serving its own model sets its own
+        # the name written to <encoding><software>; an application serving its own model sets its own, or several
+        # names (the application's and its model's), each written as a <software> of its own
         self.software = software
         # when a dict is given, filled with the lowest symbol confidence of each written measure, keyed by
         # the measure's number in the file
@@ -150,7 +151,8 @@ def build_identification(args: XmlGeneratorArguments) -> mxl.XMLIdentification:
         if value:
             ident.add_child(mxl.XMLCreator(value_=value, type=kind))
     enc = mxl.XMLEncoding()
-    enc.add_child(mxl.XMLSoftware(value_=args.software))
+    for name in [args.software] if isinstance(args.software, str) else args.software:
+        enc.add_child(mxl.XMLSoftware(value_=name))
     ident.add_child(enc)
     fields = [(key, _header_text(args.header, key)) for key in MISCELLANEOUS_FIELDS]
     if any(value for _, value in fields):
