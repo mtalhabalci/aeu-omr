@@ -34,7 +34,8 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
   `toplamSayfa`, `sayfalar` (okunan sayfa numaraları), `sureMs`, `yanitSurumu` (yanıt biçiminin sürümü, şimdi 2)
   ve `cokSesli` (okunan sistemlerden birinde birden çok porte varsa `true`: akolad, köşeli parantez ya da ortak
   ölçü çizgisiyle bağlı porteler; uygulama tam gösteremeyeceği bir notayı buradan anlar). `porteler`: okunan her porte için
-  `{porte, sayfa, kutu: [x0, y0, x1, y1], olcuBas, olcuSon, sistem, parti, partiPortesi, okuyan, aeuDenetlenmeli}`
+  `{porte, sayfa, kutu: [x0, y0, x1, y1], olcuBas, olcuSon, sistem, parti, partiPortesi, okuyan, aeuDenetlenmeli,
+  ustSesKirpildi}`
   (son beşi yanıt sürümü 2 ile geldi; "Çok seslilik"e bakın). `porte` bütün sayfalar boyunca artan sıra numarasıdır,
   çok porteli sistemde de her porte kendi numarasını alır. Kutu, porte çizgilerinin o sayfanın resmindeki
   piksel konumudur: fotoğrafta yüklenen resmin kendisi, PDF'te servisin 1920 piksel genişlikte çizdiği sayfa.
@@ -131,8 +132,10 @@ köşeli parantez düz ve kalın bir çubuktur, uçları dış çizgileri aşar;
   - `okuyan`: `"v24"` ya da `"temel"`.
   - `aeuDenetlenmeli`: temel model okuduysa `true`. Temel model AEU koma arızalarını tanımaz; bu portelerin arızaları
     düz diyez/bemol gelir, uygulama kullanıcıya göstermeli.
+  - `ustSesKirpildi`: portede akor ya da ikinci ses vardı ve yalnız üst ses yazıldıysa `true` (`OMR_COKSES_B=0`).
+    Böyle bir portenin düzeltilmişi yalnız üst sesi taşır; eğitim tarafı onu eksiksiz etiket saymaz.
 - Tek porteli notada `sistem` her portede bir artar, `parti` 0, `partiPortesi` 1, `okuyan` `"v24"`,
-  `aeuDenetlenmeli` `false`.
+  `aeuDenetlenmeli` `false`, `ustSesKirpildi` `false`.
 - Temel modelin okuduğu portelerin numaraları `uyarilar`'da tek satırda gelir.
 
 **Sınav (27.10.2026).** Çok seslilik sınavının 76 sistemi (`C:\projects\yl\cokses-sinav`, kitap telifli, depoya

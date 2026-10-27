@@ -19,8 +19,9 @@
                             the app can tell a score of several parts. Each "porteler" item then also says where the
                             staff went: "sistem" (1-based, shared by the staffs of a system), "parti" (0-based, the
                             order of P1, P2, ...), "partiPortesi" (1-based within the part, the MusicXML <staff>),
-                            "okuyan" ("v24" or "temel": which model read it) and "aeuDenetlenmeli" (true when the
-                            base model read it: it does not know the AEU koma accidentals)
+                            "okuyan" ("v24" or "temel": which model read it), "aeuDenetlenmeli" (true when the
+                            base model read it: it does not know the AEU koma accidentals) and "ustSesKirpildi"
+                            (true when the staff had chords or a second voice and only its top line was written)
     GET  /v1/omr/{isId}     {"durum": "isleniyor" | "tamam" | "hata" | "iptal", "islenenSayfa", "islenenPorte", ...}
     DELETE /v1/omr/{isId}   a running job stops before its next staff and stays as durum "iptal" (202); a finished
                             one is removed (200)
@@ -499,6 +500,7 @@ class Reader:
                             "üzerinde göründüklerinden bir oktav tiz yazıldı. Anahtar yanlış görüldüyse bu "
                             "portelerin oktavı kontrol edilmeli.")
         staff_list = []
+        cut = set(reduced)
         for number, ((page_no, box), (first, last)) in enumerate(zip(staff_boxes, staff_measures, strict=False), 1):
             measured = first <= last
             reading, by = readings[number - 1], read_by[number - 1]
@@ -506,7 +508,10 @@ class Reader:
             staff_list.append({"porte": number, "sayfa": page_no, "kutu": box,
                                "olcuBas": first if measured else None, "olcuSon": last if measured else None,
                                "sistem": reading.system + 1, "parti": part, "partiPortesi": part_staff,
-                               "okuyan": by, "aeuDenetlenmeli": by == BASE_READER})
+                               "okuyan": by, "aeuDenetlenmeli": by == BASE_READER,
+                               # chords or a second voice were cut down to the top line (OMR_COKSES_B off): a
+                               # correction of this staff shows the top line only, so it is no full label
+                               "ustSesKirpildi": number in cut})
         return {"musicxml": musicxml, "modelVersion": MODEL_VERSION, "olcuGuven": measures, "uyarilar": warnings,
                 "sureyiTutmayanOlculer": off,
                 "porteSayisi": staffs, "sayfaSayisi": len(pages), "toplamSayfa": total, "sayfalar": pages,
