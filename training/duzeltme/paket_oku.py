@@ -25,7 +25,7 @@ Which staffs (see OKU_BENI.md):
 - in a score of several parts a structural edit is put on every part, by design: a measure corrected with structural
   kinds only is no check of a staff there (yalniz-yapisal). An app that does not name itself (manifest uygulamaSurumu
   missing or null: every version before the field) put an approval on every staff of the measure, every part, too:
-  there only a correction of the notes counts (onay-butun-partilere; --onay-yeter takes the approvals all the same).
+  there only a correction of the notes counts (onay-butun-partilere). No option takes such approvals.
   An app that names itself puts an approval on the part the user chose only;
 - --yalniz-not counts a corrected measure as checked only when the correction touched its notes (perde, arıza,
   süre, nota, bağ, süsleme); a structural edit (repeat, volta, key, meter, a measure added or taken out) is made for
@@ -113,7 +113,6 @@ class PackageError(Exception):
 class Options:
     mask_measures: bool = False  # --olcu-maskele
     notes_only: bool = False  # --yalniz-not
-    approval_enough: bool = False  # --onay-yeter
 
 
 @dataclass
@@ -312,15 +311,14 @@ def _unreviewed_reason(record: dict) -> str:
     return "bakilmadi"
 
 
-def checks_of(manifest: dict, entries: list[dict], options: Options) -> Checks:
+def checks_of(manifest: dict, entries: list[dict]) -> Checks:
     """In a score of several parts the app puts a structural edit (repeat, key, meter, barline) on every part by
     design, whatever its version (the part picker sends only note edits to the chosen part): it never says the user
     looked at this staff. An app that does not name itself (no uygulamaSurumu: every version before the field, and a
-    tab opened before that release) put an approval of a measure on every staff of the measure, every part, as well;
-    --onay-yeter takes such approvals all the same."""
+    tab opened before that release) put an approval of a measure on every staff of the measure, every part, as well:
+    no option takes such approvals, so that a staff the base model read is never taken unchecked."""
     several = len({e.get("parti", 0) for e in entries}) > 1
-    return Checks(approval=not several or bool(manifest.get("uygulamaSurumu")) or options.approval_enough,
-                  structure=not several)
+    return Checks(approval=not several or bool(manifest.get("uygulamaSurumu")), structure=not several)
 
 
 def kept_marks(manifest: dict) -> tuple[frozenset[str], list[str]]:
@@ -749,7 +747,7 @@ def process_package(package: Package, options: Options) -> PackageResult:
         result.warnings.append("porte kutuları servisten değil (print-new-system tahmini): porte resmi kesilemez")
     if not entries:
         result.warnings.append("porteler.json boş")
-    result.checks = checks_of(manifest, entries, options)
+    result.checks = checks_of(manifest, entries)
 
     by_line: dict[tuple[int, int], list[StaffResult]] = defaultdict(list)
     for staff in result.staffs:
@@ -810,9 +808,10 @@ def process_package(package: Package, options: Options) -> PackageResult:
             else:
                 staff.round_trip = "tamam"
 
-    # what the app's administrator decided: only a correction version taken for training ("egitime-alindi", which
-    # also says the user finished it) gives samples; a package from before the field had no such decision. The app's
-    # own format samples never do.
+    # what the app's administrator decided: only a correction version the administrator took for training
+    # ("egitime-alindi") gives samples, and no option changes that; a package from before the field (413e4b9 and
+    # earlier) had no such decision. The user only saves; a version taken with its koma check unfinished keeps its
+    # unchecked base-model staffs out by aeu-denetlenmedi. The app's own format samples never give samples.
     control = manifest.get("kontrol") or {}
     if control.get("durum") != "egitime-alindi":
         detail = f"kontrol: {control.get('durum') or 'yok'}"
@@ -888,8 +887,7 @@ def write_dataset(results: list[PackageResult], out: str, subset: str, options: 
     staffs = [s for p in results for s in p.staffs]
     report = {
         "bicim": FORMAT,
-        "ayarlar": {"olcuMaskele": options.mask_measures, "yalnizNot": options.notes_only,
-                    "onayYeter": options.approval_enough},
+        "ayarlar": {"olcuMaskele": options.mask_measures, "yalnizNot": options.notes_only},
         "ozet": {
             "paket": len(results),
             "porte": len(staffs),
@@ -977,12 +975,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="bakılmamış ölçüleri maskeleyip portenin kalanını al (temel modelin portelerinde değil)")
     parser.add_argument("--yalniz-not", action="store_true",
                         help="düzeltilen ölçü yalnız notasına dokunulduysa denetlenmiş sayılır")
-    parser.add_argument("--onay-yeter", action="store_true",
-                        help="sürümünü yazmayan uygulamanın çok partili paketinde de ölçü onayı denetim sayılır "
-                             "(onay-butun-partilere kapanır)")
     args = parser.parse_args(argv)
-    options = Options(mask_measures=args.olcu_maskele, notes_only=args.yalniz_not,
-                      approval_enough=args.onay_yeter)
+    options = Options(mask_measures=args.olcu_maskele, notes_only=args.yalniz_not)
     refused: list[str] = []
     results = read_packages(args.paketler, options, refused)
     for message in refused:

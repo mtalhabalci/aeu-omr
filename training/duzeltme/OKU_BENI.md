@@ -12,7 +12,7 @@ düzende.
     C:\projects\yl\venv\Scripts\python.exe -m training.duzeltme.paket_oku PAKET [PAKET ...] --cikti datasets\duzeltme
 
 `PAKET`: uygulamanın verdiği zip (tek düzeltme ya da `index.json`'lu toplu paket) ya da açılmış klasörü.
-Seçenekler: `--ad train` (alt klasör ve dizin adı), `--olcu-maskele`, `--yalniz-not`, `--onay-yeter` (aşağıda).
+Seçenekler: `--ad train` (alt klasör ve dizin adı), `--olcu-maskele`, `--yalniz-not` (aşağıda).
 Model çalıştırmaz; GPU gerekmez.
 
 Çıktı (`--cikti` klasörü):
@@ -37,7 +37,11 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
 
 0. **Yönetici eğitime almış olmalı** (`yonetici-kontrolu`): manifest `kontrol.durum` `egitime-alindi` değilse
    (`bekliyor`, `egitime-alinmadi`, ya da alan yok: o alandan önceki paket) paketin hiçbir portesi alınmaz.
-   `egitime-alindi`, kullanıcının sürümü bitirdiğini ve koma denetiminin tamam olduğunu da içerir. Toplu pakette
+   Bunu hiçbir seçenek değiştirmez. Kullanıcının düzeltmesi kendiliğinden eğitime girmez: kullanıcı yalnız kaydeder,
+   kaydedilen sürüm yöneticinin listesine `bekliyor` olarak düşer, yalnız yöneticinin "eğitime al" dediği girer.
+   Uygulamanın koma denetimi bir uyarıdır, engel değildir: yönetici koma denetimi bitmemiş bir sürümü de alabilir;
+   o sürümde temel modelin okuduğu ve her ölçüsüne bakılmamış porteler `aeu-denetlenmedi` ile dışarıda kalır
+   (madde 2). 413e4b9 ve öncesinin paketlerinde `kontrol` yoktur: hiçbiri alınmaz. Toplu pakette
    durum hep `egitime-alindi`'dır; tek tek indirilen paket (yönetici incelemesi) her durumda iner, okuyucudan
    geçirilince raporda öteki nedenler de görünür: yönetici "eğitime al" derse ne alınacağını önceden görür.
    Uygulamanın biçim örnekleri (`modelVersion: "v-ornek"` ya da `riza.metinSurumu: "ornek"`) de alınmaz
@@ -58,12 +62,12 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    `uygulamaSurumu` yoksa ya da null ise (o alandan önceki bütün sürümler, 413e4b9 dahil, ve yayından önce açılmış
    sekmeden yapılan kayıtlar) uygulama bir ölçünün onayını ölçünün bütün portelerine, bütün partilere geçirmiştir.
    `uygulamaSurumu` yazan uygulamada onay yalnız kullanıcının seçtiği partiye geçer ve temel modelin okuduğu
-   portenin her ölçüsü bakılmadan düzeltme bitirilemez: orada onay o portenin denetimidir. Tek partili pakette onay
+   portenin onayı o portenin denetimidir. Tek partili pakette onay
    da yapısal düzeltme de yalnız o partinindir. Yeni paketlerde her kaydın `onaylandi` alanı (true/false)
    kullanıcının o portenin o ölçüsünü onaylayıp onaylamadığını `durum`'dan bağımsız söyler: yapısal düzeltme
    ölçüyü `duzeltildi` yapsa da onay sayılır (onayın sayıldığı pakette). Alan yoksa (413e4b9 ve öncesi) onay
-   `duzeltildi` durumunda kaybolmuştur, temkinli kalınır. `--onay-yeter` eski çok partili paketlerde de onayı denetim sayar
-   (yapısal kuralı değiştirmez). Raporda paket başına `uygulamaSurumu`, `onayButunPartilere`,
+   `duzeltildi` durumunda kaybolmuştur, temkinli kalınır. Bütün partilere geçmiş onayı denetim sayan bir seçenek
+   yoktur. Raporda paket başına `uygulamaSurumu`, `onayButunPartilere`,
    `yapisalDenetimSayilmaz`.
    (Bu kurallar, Talha'nın kararı beklenirken konan `aeu-yalniz-onay`'ın yerini aldı: temel modelin okuduğu porte
    yalnız onayla alınmıyordu.)

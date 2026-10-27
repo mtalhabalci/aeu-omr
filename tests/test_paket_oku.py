@@ -5,7 +5,9 @@ the corrected score is written the way the app writes it (music-core scoreToMusi
 reading, 53-TET <alter>s, the accidentals worked out again from the pitches, a light-heavy barline after the last
 measure)."""
 
+import contextlib
 import hashlib
+import io
 import json
 import tempfile
 import unittest
@@ -580,8 +582,8 @@ class MultiPart(unittest.TestCase):
 
     def test_staff_cut_down_to_its_top_line_is_left_out(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            [package] = load_packages(str(multi_package(Path(tmp), cut_down=(5,))))
-            staffs = by_staff(process_package(package, Options(approval_enough=True)))
+            [package] = load_packages(str(multi_package(Path(tmp), cut_down=(5,), app_version="5e1c0d2")))
+            staffs = by_staff(process_package(package, Options()))
         self.assertEqual(reasons(staffs[5]), {"ust-ses-kirpildi"})
         self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4, 6])
         # the service said which staffs it cut down: no guessing warning on the others
@@ -602,8 +604,9 @@ class MultiPart(unittest.TestCase):
 
     def test_checked_base_model_staff_is_taken(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            [package] = load_packages(str(multi_package(Path(tmp), left_hand_first="onaylandi")))
-            staffs = by_staff(process_package(package, Options(approval_enough=True)))
+            [package] = load_packages(str(multi_package(Path(tmp), left_hand_first="onaylandi",
+                                                        app_version="5e1c0d2")))
+            staffs = by_staff(process_package(package, Options()))
         self.assertTrue(staffs[3].accepted, staffs[3].reasons)
         self.assertEqual(row_texts(staffs[3].rows), ["clef_F4 _ _ _ upper", "timeSignature_2/4 . . . .",
                                                      "note_2 A3 _ _ upper", "barline . . . ."])
@@ -626,7 +629,6 @@ class ApprovalOfEveryPart(unittest.TestCase):
             old = multi_package(Path(tmp) / "eski")
             new = multi_package(Path(tmp) / "yeni", app_version="5e1c0d2")
             before = self.staffs_of(old, Options())
-            enough = self.staffs_of(old, Options(approval_enough=True))
             named = self.staffs_of(new, Options())
             # a structural edit is put on every part in every version: no check of this staff in either package
             self.structural_edit_on_staff_5(old)
@@ -635,12 +637,11 @@ class ApprovalOfEveryPart(unittest.TestCase):
             out = Path(tmp) / "veri"
             self.assertEqual(main([str(old), "--cikti", str(out)]), 0)
             report = json.loads((out / "rapor.json").read_text(encoding="utf-8"))["paketler"][0]
-            out = Path(tmp) / "veri-yeter"
-            self.assertEqual(main([str(old), "--cikti", str(out), "--onay-yeter"]), 0)
-            report_enough = json.loads((out / "rapor.json").read_text(encoding="utf-8"))
+            # no option takes the approvals an unnamed app put on every part
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                main([str(old), "--cikti", str(Path(tmp) / "veri-yeter"), "--onay-yeter"])
         self.assertEqual([n for n, s in before.items() if s.accepted], [2, 4])  # pitches corrected on them
         self.assertEqual([n for n, s in before.items() if "onay-butun-partilere" in reasons(s)], [5, 6])
-        self.assertEqual([n for n, s in enough.items() if s.accepted], [2, 4, 5, 6])
         self.assertEqual([n for n, s in named.items() if s.accepted], [2, 4, 5, 6])
         self.assertEqual(reasons(structural_before[5]), {"yalniz-yapisal", "aeu-denetlenmedi"})
         self.assertEqual(reasons(structural_named[5]), {"yalniz-yapisal", "aeu-denetlenmedi"})
@@ -648,10 +649,6 @@ class ApprovalOfEveryPart(unittest.TestCase):
         self.assertIsNone(report["uygulamaSurumu"])
         self.assertTrue(report["onayButunPartilere"])
         self.assertTrue(report["yapisalDenetimSayilmaz"])
-        self.assertTrue(report_enough["ayarlar"]["onayYeter"])
-        self.assertFalse(report_enough["paketler"][0]["onayButunPartilere"])
-        # --onay-yeter takes the approvals, not the structural edit of staff 5
-        self.assertEqual([s["porte"] for s in report_enough["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 6])
 
     def test_approval_kept_beside_a_structural_edit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
