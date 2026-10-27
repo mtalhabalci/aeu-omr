@@ -91,12 +91,29 @@ yalnız *basılı* arıza, bağlar `tieStart/tieStop`, süsleme `note_8G`, üçl
 jetonları.
 
 Uygulamanın MusicXML'i sayfanın çizdiğini tam taşımaz: arızaları perdeden yeniden hesaplar (hatırlatma arızası
-düşer), ölçü çizgisi biçimi yoktur, bağ dışında yay ve artikülasyon yoktur. Bunlar uygulamada düzenlenemez; hepsi
-modelin aynı sayfadaki okumasından (`model.musicxml`) alınır ve **doğrulanmamış (`?`)** yazılır, çünkü kullanıcı
-bunları ekranda görüp onaylayamaz:
-- okumanın gördüğü hatırlatma arızası (`note_2 C5 ?N ?slurStop upper`), yay ve artikülasyonlar;
+düşer), ölçü çizgisi biçimi yoktur, notanın işaretlerinden yalnız bağı ve üçleme parantezini tutar. Uygulamanın
+MusicXML okuyucusu (`music-core musicxml.ts`) `<notations>` içinden yalnız `<tied>` ve `<tuplet>`'i okur;
+`duzeltilmis.musicxml` uygulamanın kendi notasından yeniden yazılır (`musicxml-yaz.ts`), bu yüzden modelin okuduğu
+öteki işaretlerin hepsi düzeltilmiş dosyada yoktur. Bunlar uygulamada düzenlenemez; hepsi modelin aynı sayfadaki
+okumasından (`model.musicxml`) alınır ve **doğrulanmamış (`?`)** yazılır, çünkü kullanıcı bunları ekranda görüp
+onaylayamaz:
+- okumanın gördüğü hatırlatma arızası (`note_2 C5 ?N ?slurStop upper`);
+- **notanın işaretleri**: yay (`slurStart`, `slurStop`), **fermata**, staccato, staccatissimo, tenuto, aksan
+  (`accent`), nefes (`breathMark`), tril (`trill`), grupetto (`turn`), tremolo, arpej (`arpeggiate`). Okumadaki aynı
+  olaydan (`<note id>`) alınır, kullanıcı perdesini ya da süresini değiştirse de (`note_2 B4 _ ?fermata_slurStop
+  upper`); susun fermatası da (`rest_4 _ _ ?fermata upper`); kullanıcının susa çevirdiği notada yalnız fermata
+  kalır. Birleşim sözlükte yoksa sözlükte olan en büyük alt kümesi yazılır, fermata önce. Sezura'nın jetonu yoktur
+  (sözlük tutmaz), süsleme notalarının işaretleri eşlenemez;
+- bağ (`tieStart`, `tieStop`) düzeltilmiş dosyadan gelir, doğrulanmış;
 - kesik/çift/kalın ölçü çizgisi (`?dashedbarline`);
 - portenin başında donanım basılı mı: okuma görmediyse yazılmaz.
+
+Uygulama fermatayı (sonra belki öteki işaretleri) tutmaya başlayınca o işaret düzeltilmiş dosyadan alınır:
+okuyucu bunu dosyanın kendisinden anlar. Düzeltilmiş dosyada bir türden tek bir işaret bile varsa (ör.
+`<fermata/>`) o tür kullanıcınındır, doğrulanmış yazılır ve okumanınki kullanılmaz; raporda paket uyarısı
+"düzeltilmiş nota şu işaretleri kendisi taşıyor". Hiç yoksa okumanınki `?` ile gelir: dosya "tutuyor ama bu
+sayfada yok" ile "tutmuyor"u ayıramaz. Paket bunu biçim sürümüyle ya da bir alanla söylediğinde
+(`etiket.py carried_marks` içindeki TODO) oradan alınmalı.
 
 **Yazıcının varsayılanları** (uygulamada düzenlenemez, etiket bunları kullanıcının yazdığından ayırır; rapor
 `yaziciVarsayilanlari`'nda sayar):
