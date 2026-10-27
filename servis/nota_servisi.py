@@ -14,6 +14,9 @@
                             when not found; guven and kutu per field found, kutu in that page's pixels like the staff
                             boxes; sayfa); null, with a warning, when it could not be read. The same fields go into
                             the MusicXML (<work-title>, <creator>, <miscellaneous-field>).
+                            "yanitSurumu" is the answer's format version (2); "cokSesli" is true when any system read
+                            has more than one staff (staffs joined by a brace, a bracket or a common barline), so
+                            the app can tell a score it may not show fully
     GET  /v1/omr/{isId}     {"durum": "isleniyor" | "tamam" | "hata" | "iptal", "islenenSayfa", "islenenPorte", ...}
     DELETE /v1/omr/{isId}   a running job stops before its next staff and stays as durum "iptal" (202); a finished
                             one is removed (200)
@@ -76,6 +79,8 @@ PAGE_WIDTH = 1920  # a pdf page is rendered at this width, as for the page exams
 LOW_CONFIDENCE = 0.5
 TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
 XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
+# the answer's format: 2 adds yanitSurumu and cokSesli (the app checks it before reading what version 2 adds)
+ANSWER_VERSION = 2
 
 
 def _no_title(*_: object) -> Future:
@@ -234,6 +239,7 @@ class Reader:
         staff_boxes: list[tuple[int, list[int]]] = []
         tempo_found: list[tuple[int, object]] = []  # (staff number from 0, TempoMark)
         header_page: tuple | None = None  # (page number, page image, top of its first staff)
+        polyphonic = False  # a system of more than one staff was found
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -249,6 +255,10 @@ class Reader:
                     warnings.append(f"{where}: porte bulunamadı.")
                     continue
                 regions = StaffRegions(multi_staffs)
+                # staffs joined into a system (a brace, a bracket or a common barline), or two of them merged into
+                # one grand staff
+                polyphonic = polyphonic or any(len(multi.staffs) > 1 or any(s.is_grandstaff for s in multi.staffs)
+                                               for multi in multi_staffs)
                 # staffs are found on the page cropped to the paper and scaled; their boxes go back to the image
                 height, width = page_pixels.shape[:2]
                 box = autocrop_box(page_pixels) or (0, 0, width, height)
@@ -322,7 +332,8 @@ class Reader:
                 "sureyiTutmayanOlculer": off,
                 "porteSayisi": staffs, "sayfaSayisi": len(pages), "toplamSayfa": total, "sayfalar": pages,
                 "porteler": staff_list, "sayfaResimleri": page_info, "tempolar": tempos, "baslikBilgisi": header,
-                "sureMs": round((time.perf_counter() - start) * 1000)}
+                "sureMs": round((time.perf_counter() - start) * 1000), "yanitSurumu": ANSWER_VERSION,
+                "cokSesli": polyphonic}
 
 
 app = FastAPI(title="Nota okuma servisi", docs_url=None, redoc_url=None, openapi_url=None)

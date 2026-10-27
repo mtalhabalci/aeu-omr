@@ -29,7 +29,9 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
   ör. `"1-3,5"`; boşsa bütün sayfalar; resimde yok sayılır). Yalnız seçilen sayfalar okunur; MusicXML yalnız onları
   içerir ve ölçüler yine 1'den boşluksuz numaralanır. Yanıt: `musicxml`, `modelVersion`, `olcuGuven`
   (`[{olcu, guven}]`, ölçü numaraları MusicXML'dekiyle aynı), `uyarilar`, `porteSayisi`, `sayfaSayisi` (okunan),
-  `toplamSayfa`, `sayfalar` (okunan sayfa numaraları), `sureMs`. `porteler`: okunan her porte için
+  `toplamSayfa`, `sayfalar` (okunan sayfa numaraları), `sureMs`, `yanitSurumu` (yanıt biçiminin sürümü, şimdi 2)
+  ve `cokSesli` (okunan sistemlerden birinde birden çok porte varsa `true`: akolad, köşeli parantez ya da ortak
+  ölçü çizgisiyle bağlı porteler; uygulama tam gösteremeyeceği bir notayı buradan anlar). `porteler`: okunan her porte için
   `{porte, sayfa, kutu: [x0, y0, x1, y1], olcuBas, olcuSon}`. Kutu, porte çizgilerinin o sayfanın resmindeki
   piksel konumudur: fotoğrafta yüklenen resmin kendisi, PDF'te servisin 1920 piksel genişlikte çizdiği sayfa.
   Ölçü numaraları MusicXML'dekiyle aynıdır; satır sonunda bölünen bir ölçü iki portede de görünür, ölçüsü
