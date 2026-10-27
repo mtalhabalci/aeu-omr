@@ -16,7 +16,11 @@
                             the MusicXML (<work-title>, <creator>, <miscellaneous-field>).
                             "yanitSurumu" is the answer's format version (2); "cokSesli" is true when any system read
                             has more than one staff (staffs joined by a brace, a bracket or a common barline), so
-                            the app can tell a score it may not show fully
+                            the app can tell a score of several parts. Each "porteler" item then also says where the
+                            staff went: "sistem" (1-based, shared by the staffs of a system), "parti" (0-based, the
+                            order of P1, P2, ...), "partiPortesi" (1-based within the part, the MusicXML <staff>),
+                            "okuyan" ("v24" or "temel": which model read it) and "aeuDenetlenmeli" (true when the
+                            base model read it: it does not know the AEU koma accidentals)
     GET  /v1/omr/{isId}     {"durum": "isleniyor" | "tamam" | "hata" | "iptal", "islenenSayfa", "islenenPorte", ...}
     DELETE /v1/omr/{isId}   a running job stops before its next staff and stays as durum "iptal" (202); a finished
                             one is removed (200)
@@ -27,17 +31,29 @@ When OMR_ANAHTAR is set, the X-Omr-Anahtar header must equal it.
 
 The reading is the thesis's final reader: the fine-tuned staff model (v20) with its decoding rules, the makam
 resolver and the MusicXML writer. Staffs are found and cut as training/read_page.py does for the page exams.
+
+Polyphony. The makam model has forgotten what its base model read: chords, a second voice, the bass and alto
+clefs. Staffs found joined into a system (brace, bracket or a common barline) are each read alone, first by the
+base model (run 331, OMR_TEMEL_MODEL); its reading is kept when it shows a chord, a second staff or a clef other than
+the treble clef, otherwise the makam model reads the staff (the polyphony exam's hybrid reader, note F1 0.90).
+Braces and brackets are told apart on the page (homr.staff_groups): a braced pair is one part of two staves, a
+bracket a part group of one part per staff, every other staff a part (homr.score_parts). With OMR_COKSES_B=1
+chords and second voices are written (<chord/>, <voice>, <backup>) and single staffs are read by both models too;
+off (the default), every staff is written as its top line (at each onset the highest note) and a page of single
+staffs is read exactly as before. The names printed left of a system become the parts' names (homr.part_names).
+
 The app is not to show which open-source project the reader grew from, so the file's <software> is OMR_YAZILIM
 and no response names it: by default two names, the application's and the model's ("Musiki Akademisi OMR;AEU-OMR",
 Talha 24.10), each written as a <software> of its own.
 
-Environment: OMR_MODEL (weights), OMR_MODEL_SURUM (reported version), OMR_YAZILIM (<software> names, separated by
-";"), OMR_ANAHTAR,
-OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU.
+Environment: OMR_MODEL (weights), OMR_TEMEL_MODEL (the base model's weights; without them every staff is read by
+the makam model), OMR_COKSES_B=1 (chords and second voices), OMR_MODEL_SURUM (reported version), OMR_YAZILIM
+(<software> names, separated by ";"), OMR_ANAHTAR, OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU.
 """
 
 import os
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -57,7 +73,21 @@ from homr.autocrop import autocrop_box
 from homr.baslik_okuyucu import prepare as prepare_header_reader
 from homr.baslik_okuyucu import read_header
 from homr.main import ProcessingConfig, detect_staffs_in_image
+from homr.makam_key import resolve_western_sounding
+from homr.model import MultiStaff
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
+from homr.part_names import read_part_names
+from homr.score_parts import (
+    ScorePlan,
+    StaffReading,
+    SystemLayout,
+    is_polyphonic,
+    on_one_staff,
+    plan_score,
+    top_voice,
+    write_score,
+)
+from homr.staff_groups import find_staff_groups
 from homr.staff_parsing import prepare_staff_image
 from homr.staff_regions import StaffRegions
 from homr.tempo_reader import read_tempo_marks
@@ -71,6 +101,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.environ.get("OMR_MODEL", os.path.join(
     ROOT, "training", "architecture", "transformer", "pytorch_model_1-819bee2ae062dff09fd97af4dfae98dd1709ceb3.pth"))
 MODEL_VERSION = os.environ.get("OMR_MODEL_SURUM", "v24+kurallar-2026-10-16")
+# the model v24 was fine-tuned from (run 331): it reads chords, second voices and the clefs other than the treble
+# clef, which the makam model has forgotten, but not the AEU accidentals
+BASE_MODEL_PATH = os.environ.get("OMR_TEMEL_MODEL", os.path.join(
+    ROOT, "training", "architecture", "transformer", "pytorch_model_331-e10346542968cc71fbcce0c0696f3ac963f11ae1.pth"))
+# chords and second voices (<chord/>, <voice>, <backup>) written; off, every staff is written as its top line
+COKSES_B = os.environ.get("OMR_COKSES_B") == "1"
+# porteler[].okuyan: which model read a staff
+MAKAM_READER, BASE_READER = "v24", "temel"
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -101,29 +139,32 @@ def measures_off_meter(musicxml: str) -> list[int]:
     """Measures whose notes and rests do not add up to the time signature: a duration was misread. The first and
     last measure may be short (an upbeat and the measure that completes it), so they count only when too long."""
     root = ET.fromstring(musicxml)
-    measures = root.findall("./part/measure")
-    divisions, meter, off = 1, None, []
-    for index, measure in enumerate(measures):
-        for attributes in measure.findall("attributes"):
-            divisions = int(attributes.findtext("divisions") or divisions)
-            time_signature = attributes.find("time")
-            if time_signature is not None:
-                try:
-                    meter = Fraction(int(time_signature.findtext("beats")), int(time_signature.findtext("beat-type")))
-                except (TypeError, ValueError):
-                    meter = None
-        if meter is None or measure.find("attributes/measure-style/multiple-rest") is not None:
-            continue
-        voices: dict[str, int] = {}
-        for note in measure.findall("note"):
-            if note.find("chord") is None and note.find("grace") is None:
-                voice = note.findtext("voice") or "1"
-                voices[voice] = voices.get(voice, 0) + int(note.findtext("duration") or 0)
-        length = Fraction(max(voices.values(), default=0), divisions * 4)
-        edge = index in (0, len(measures) - 1)
-        if length > meter or (length < meter and not edge):
-            off.append(int(measure.get("number")))
-    return off
+    off: set[int] = set()
+    for part in root.findall("./part"):  # every part on its own; a measure counts once
+        measures = part.findall("measure")
+        divisions, meter = 1, None
+        for index, measure in enumerate(measures):
+            for attributes in measure.findall("attributes"):
+                divisions = int(attributes.findtext("divisions") or divisions)
+                time_signature = attributes.find("time")
+                if time_signature is not None:
+                    try:
+                        meter = Fraction(int(time_signature.findtext("beats")),
+                                         int(time_signature.findtext("beat-type")))
+                    except (TypeError, ValueError):
+                        meter = None
+            if meter is None or measure.find("attributes/measure-style/multiple-rest") is not None:
+                continue
+            voices: dict[str, int] = {}
+            for note in measure.findall("note"):
+                if note.find("chord") is None and note.find("grace") is None:
+                    voice = note.findtext("voice") or "1"
+                    voices[voice] = voices.get(voice, 0) + int(note.findtext("duration") or 0)
+            length = Fraction(max(voices.values(), default=0), divisions * 4)
+            edge = index in (0, len(measures) - 1)
+            if length > meter or (length < meter and not edge):
+                off.add(int(measure.get("number")))
+    return sorted(off)
 
 
 def scanned(page) -> bool:
@@ -183,8 +224,50 @@ def parse_pages(spec: str | None, total: int) -> list[int]:
     return sorted(chosen)
 
 
+def load_base_model(path: str):  # noqa: ANN201  (a TrOMR)
+    """The model the makam model was fine-tuned from (run 331), which still reads polyphony. Its checkpoint has no
+    rows for the tokens added for makam notation (rhythm ids from 260, accidental ids from 7): loaded into the
+    grown vocabulary they would be random, so they are masked and the model chooses only among the tokens it was
+    trained on, as in the polyphony exam."""
+    config = Config()
+    config.filepaths.checkpoint = path
+    model = load_model(config)
+    model.eval_mode()
+    saved = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+    net = model.decoder.net
+    with torch.no_grad():
+        for name in ("to_logits_rhythm", "to_logits_lift", "to_logits_pitch", "to_logits_articulations",
+                     "to_logits_position"):
+            layer = getattr(net, name)
+            rows = saved[f"decoder.net.{name}.weight"].shape[0]
+            if rows < layer.weight.shape[0]:
+                layer.weight[rows:] = 0
+                layer.bias[rows:] = -1e4
+    del saved
+    return model
+
+
+def split_unjoined_systems(systems: list[MultiStaff], groups: dict[int, list]) -> list[MultiStaff]:
+    """On a page of mostly single staffs, a system of several staffs with neither brace nor bracket is taken for
+    staffs that touched by chance (a long stem, a slur, a volta line): its staffs are read as single staffs."""
+    joined = [system for system in systems if len(system.staffs) > 1]
+    if len(systems) - len(joined) <= len(joined):
+        return systems
+    result: list[MultiStaff] = []
+    for system in systems:
+        if len(system.staffs) > 1 and not groups.get(id(system)):
+            result.extend(MultiStaff([staff], []) for staff in system.staffs)
+        else:
+            result.append(system)
+    return result
+
+
+def numbered(numbers: list[int]) -> str:
+    return ", ".join(map(str, numbers))
+
+
 class Reader:
-    """The model, loaded once; one reading at a time, since the GPU holds a single copy."""
+    """The models, loaded once; one reading at a time, since the GPU holds a single copy of each."""
 
     def __init__(self) -> None:
         reader_main.detect_title = _no_title
@@ -193,6 +276,12 @@ class Reader:
         self.model = load_model(config)
         self.model.eval_mode()
         self.device = next(self.model.parameters()).device
+        # the base model reads the staffs of systems of several staffs (with OMR_COKSES_B every staff); without its
+        # weights the makam model reads every staff, and the parts are written all the same
+        self.base_model = load_base_model(BASE_MODEL_PATH) if os.path.exists(BASE_MODEL_PATH) else None
+        if self.base_model is None:
+            print(f"Temel model yok ({BASE_MODEL_PATH}); çok sesli porteler de makam modeliyle okunacak.",
+                  file=sys.stderr)
         self.lock = threading.Lock()
         self.processing = ProcessingConfig(False, False, False, False, -1,
                                            os.environ.get("OMR_GPU_SEGMENTASYON") == "1")
@@ -227,19 +316,35 @@ class Reader:
             source = "tarama" if scanned(page) else "dijital"
         return image, round(72 * zoom, 2), source
 
+    def _read_staff(self, tensor: torch.Tensor, polyphony_possible: bool) -> tuple[list[EncodedSymbol], str]:
+        """A staff's symbols and which model read them. Where polyphony is possible the base model reads first, and
+        its reading is taken when it shows what the makam model cannot read (score_parts.is_polyphonic: a chord, a
+        second staff, a clef other than the treble clef); otherwise the makam model reads the staff, which knows
+        the AEU accidentals."""
+        if polyphony_possible and self.base_model is not None:
+            with torch.no_grad():
+                base = [s for s in self.base_model.generate(tensor.unsqueeze(0)) if not s.is_control_symbol()]
+            if is_polyphonic(base):
+                # its signs are Western (keySignature_N, #, b): the writer's makam resolver does not apply them
+                return resolve_western_sounding(on_one_staff(base)), BASE_READER
+        with torch.no_grad():
+            symbols = self.model.generate(tensor.unsqueeze(0))
+        return [s for s in symbols if not s.is_control_symbol()], MAKAM_READER
+
     def read(self, path: str, pages: list[int] | None = None, progress=None,
              cancel: threading.Event | None = None) -> dict:
         """Read the given 1-based pages of a PDF (all when None; an image is page 1). progress(pages_done, staffs)
         is called after each page; cancel, when set, stops the reading before the next staff."""
         start = time.perf_counter()
         warnings: list[str] = []
-        voice: list[EncodedSymbol] = []
         staffs = 0
         page_info: list[dict] = []
         staff_boxes: list[tuple[int, list[int]]] = []
         tempo_found: list[tuple[int, object]] = []  # (staff number from 0, TempoMark)
         header_page: tuple | None = None  # (page number, page image, top of its first staff)
-        polyphonic = False  # a system of more than one staff was found
+        layouts: list[SystemLayout] = []  # every system read, in reading order
+        readings: list[StaffReading] = []  # every staff read, in the order of staff_boxes
+        read_by: list[str] = []  # the model that read each of them
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -250,22 +355,35 @@ class Reader:
                 page_pixels = cv2.imread(image)
                 where = f"{page_no}. sayfa" if total > 1 else "Sayfa"
                 try:
-                    multi_staffs, preprocessed, debug, _ = detect_staffs_in_image(image, self.processing)
+                    # the staffs of a system stay apart, each read on its own: merged into one grand staff image,
+                    # the makam model reads only its top line
+                    multi_staffs, preprocessed, debug, _ = detect_staffs_in_image(image, self.processing,
+                                                                                  merge_grand_staffs=False)
                 except Exception:  # noqa: BLE001
                     warnings.append(f"{where}: porte bulunamadı.")
                     continue
                 regions = StaffRegions(multi_staffs)
-                # staffs joined into a system (a brace, a bracket or a common barline), or two of them merged into
-                # one grand staff
-                polyphonic = polyphonic or any(len(multi.staffs) > 1 or any(s.is_grandstaff for s in multi.staffs)
-                                               for multi in multi_staffs)
+                systems = sorted(multi_staffs, key=lambda m: min(s.min_y for s in m.staffs))
+                groups = {id(m): find_staff_groups(preprocessed, m) for m in systems if len(m.staffs) > 1}
+                systems = split_unjoined_systems(systems, groups)
+                system_of: dict[int, tuple[int, int]] = {}  # staff -> (system, place in it from the top)
+                for system in systems:
+                    for place, staff in enumerate(system.staffs):
+                        system_of[id(staff)] = (len(layouts), place)
+                    layout = SystemLayout(len(system.staffs), groups.get(id(system), []))
+                    if layout.staffs > 1:
+                        try:  # the names at the left margin become the parts' names; a name is not needed
+                            layout.names = read_part_names(preprocessed, system, layout.slots())
+                        except Exception:  # noqa: BLE001
+                            layout.names = []
+                    layouts.append(layout)
                 # staffs are found on the page cropped to the paper and scaled; their boxes go back to the image
                 height, width = page_pixels.shape[:2]
                 box = autocrop_box(page_pixels) or (0, 0, width, height)
                 scale_x, scale_y = box[2] / preprocessed.shape[1], box[3] / preprocessed.shape[0]
                 page_info.append({"sayfa": page_no, "genislik": width, "yukseklik": height, "dpi": dpi,
                                   "kaynak": source})
-                found = sorted((s for multi in multi_staffs for s in multi.staffs), key=lambda s: s.min_y)
+                found = sorted((s for multi in systems for s in multi.staffs), key=lambda s: s.min_y)
                 page_first = len(staff_boxes)
                 for number, staff in enumerate(found):
                     if cancel is not None and cancel.is_set():
@@ -277,9 +395,10 @@ class Reader:
                         continue
                     gray = cut if cut.ndim == 2 else cv2.cvtColor(cut, cv2.COLOR_BGR2GRAY)
                     tensor = pad_to_3_dims(ndarray_to_tensor(gray)).to(self.device)
-                    with torch.no_grad():
-                        symbols = self.model.generate(tensor.unsqueeze(0))
-                    voice += [s for s in symbols if not s.is_control_symbol()] + [EncodedSymbol("newline")]
+                    system_no, place = system_of[id(staff)]
+                    symbols, by = self._read_staff(tensor, layouts[system_no].staffs > 1 or COKSES_B)
+                    readings.append(StaffReading(system_no, place, symbols))
+                    read_by.append(by)
                     staff_boxes.append((page_no, [round(box[0] + staff.min_x * scale_x),
                                                   round(box[1] + staff.min_y * scale_y),
                                                   round(box[0] + staff.max_x * scale_x),
@@ -297,12 +416,37 @@ class Reader:
                                 "Görüntüde okunabilir porte bulunamadı. Sayfanın tamamı, düz ve net çekilmiş "
                                 "olmalı.")
             header = self._title_block(header_page, warnings)
+            polyphonic = any(layout.staffs > 1 or layout.groups for layout in layouts)
+            base_read = [n for n, by in enumerate(read_by, 1) if by == BASE_READER]
+            plan: ScorePlan | None = None
+            reduced: list[int] = []
+            if polyphonic or base_read:
+                # parts by the systems' layouts and the staffs' clefs (to place a system of fewer staffs)
+                clefs: list[list[str | None]] = [[None] * layout.staffs for layout in layouts]
+                for reading in readings:
+                    clefs[reading.system][reading.staff] = next(
+                        (s.rhythm for s in reading.symbols if s.rhythm.startswith("clef_")), None)
+                plan = plan_score(layouts, clefs)
+                if not COKSES_B:  # no chords and no second voices: every staff keeps its top line
+                    for number, reading in enumerate(readings, 1):
+                        reading.symbols, cut_down = top_voice(reading.symbols)
+                        if cut_down:
+                            reduced.append(number)
 
             def write(tempo_marks: dict) -> tuple[str, dict[int, float], list[tuple[int, int]]]:
                 confidence: dict[int, float] = {}
                 staff_measures: list[tuple[int, int]] = []
+                if plan is not None:
+                    args = XmlGeneratorArguments(software=SOFTWARE, tempo_marks=tempo_marks, header=header,
+                                                 split_rest_chords=True)
+                    score = write_score(args, layouts, readings, plan)
+                    return (XML_DECLARATION + score.musicxml, score.confidence,
+                            [m if m is not None else (1, 0) for m in score.measures])
                 args = XmlGeneratorArguments(software=SOFTWARE, measure_confidence=confidence,
                                              staff_measures=staff_measures, tempo_marks=tempo_marks, header=header)
+                voice: list[EncodedSymbol] = []
+                for reading in readings:
+                    voice += reading.symbols + [EncodedSymbol("newline")]
                 # built as text, not written to a file: the library writes files in the system's code page, which
                 # would garble the title block's Turkish letters on Windows
                 return XML_DECLARATION + generate_xml(args, [voice], "").to_string(), confidence, staff_measures
@@ -323,11 +467,21 @@ class Reader:
         off = measures_off_meter(musicxml)
         if off:
             warnings.append(f"Ölçü {', '.join(map(str, off))}: süreler ölçü işaretini tutmuyor; kontrol edilmeli.")
+        if base_read:
+            warnings.append(f"Porte {numbered(base_read)}: çok sesli okuyucuyla okundu (akor, ikinci porte ya da sol "
+                            "anahtarı dışında bir anahtar gördü). Bu okuyucu AEU arızalarını tanımaz; bu portelerin "
+                            "arızaları kontrol edilmeli.")
+        if reduced:
+            warnings.append(f"Porte {numbered(reduced)}: akor ya da ikinci ses vardı; yalnız üst ses yazıldı.")
         staff_list = []
         for number, ((page_no, box), (first, last)) in enumerate(zip(staff_boxes, staff_measures, strict=False), 1):
             measured = first <= last
+            reading, by = readings[number - 1], read_by[number - 1]
+            part, part_staff = plan.placement[reading.system][reading.staff] if plan is not None else (0, 1)
             staff_list.append({"porte": number, "sayfa": page_no, "kutu": box,
-                               "olcuBas": first if measured else None, "olcuSon": last if measured else None})
+                               "olcuBas": first if measured else None, "olcuSon": last if measured else None,
+                               "sistem": reading.system + 1, "parti": part, "partiPortesi": part_staff,
+                               "okuyan": by, "aeuDenetlenmeli": by == BASE_READER})
         return {"musicxml": musicxml, "modelVersion": MODEL_VERSION, "olcuGuven": measures, "uyarilar": warnings,
                 "sureyiTutmayanOlculer": off,
                 "porteSayisi": staffs, "sayfaSayisi": len(pages), "toplamSayfa": total, "sayfalar": pages,
