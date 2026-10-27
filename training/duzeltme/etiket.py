@@ -11,13 +11,14 @@ trained on (see training/datasets/convert_symbtr.py EngravingState):
   the page prints is not there;
 - it has no barline styles: every barline is plain except the light-heavy one it puts after the last measure, and a
   repeat's;
-- no slurs and no articulations, only ties;
+- no slurs, no fermatas and no other articulations, only ties (MARK_KINDS);
 - a time signature in the first measure whether or not the page prints one, and a key only where it changes;
 - one voice per staff, without chords.
 
 What the corrected file cannot tell, the model's reading of the same page (model.musicxml, written by
 homr.music_xml_generator from the model's tokens) can: a courtesy sign the model read on a note the user left as it
-was, a dashed or double barline, a slur, whether a key or a time signature is printed at the head of a staff. Those
+was, a dashed or double barline, a slur, a fermata or another articulation on the same note or rest (by its id,
+whatever the user changed in it), whether a key or a time signature is printed at the head of a staff. Those
 fields are taken from the reading and written unverified, with the "?" the training reads as "the loss skips this"
 (training/transformer/training_vocabulary.py UNVERIFIED), since nothing the user did confirms them.
 
@@ -32,6 +33,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, field
 from fractions import Fraction
+from itertools import combinations
 
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.transformer.vocabulary import (
@@ -137,6 +139,19 @@ ORNAMENT_NAMES = {
     "inverted-turn": "turn",
     "tremolo": "tremolo",
 }
+# What the app's MusicXML keeps of a note besides its pitch and duration: ties and tuplet brackets only. Its reader
+# (music-core musicxml.ts) drops <notations> but for <tied> and <tuplet>, and duzeltilmis.musicxml is written anew
+# from its Score (musicxml-yaz.ts), so every slur, fermata, staccato, staccatissimo, tenuto, accent, breath mark,
+# trill, turn, tremolo and arpeggio the model read is gone from the corrected file. Those marks are taken from the
+# reading, by note id, unverified (MARK_KINDS, carried_marks). A caesura has no token: homr's vocabulary leaves it
+# out, so the model never reads one.
+MARK_KINDS = ("slur", "fermata", "staccato", "staccatissimo", "tenuto", "accent", "breathMark", "trill", "turn",
+              "tremolo", "arpeggiate")
+
+
+def mark_kind(name: str) -> str:
+    """slurStart and slurStop are one kind of mark; every other mark is its own."""
+    return "slur" if name.startswith("slur") else name
 
 # Where a key signature's sign stands on a treble staff, in staff steps above the bottom line (E4): the sharps
 # F5 C5 G5 D5 A4 E5 B4 and the flats B4 E5 A4 D5 G4 C5 F4, as every training set spells them (convert_lieder_makam)
@@ -630,6 +645,8 @@ class Hints:
     # is the reading's, the app writes a light-heavy one there whatever the page has
     reading_end: Measure | None = None
     last_measure: int | None = None
+    # the kinds of mark (mark_kind) the corrected file holds itself: those are the user's, the others the reading's
+    carried: frozenset[str] = frozenset()
 
 
 def _kern(event: Event) -> str:
@@ -646,17 +663,67 @@ def _kern(event: Event) -> str:
 
 
 def _twin(event: Event, hints: Hints) -> Event | None:
-    twin = hints.events.get(event.note_id or "")
-    if twin is None or not twin.is_note or twin.is_grace:
+    """The reading's note this note was, with the same pitch: whose drawn sign it can take."""
+    twin = _same_event(event, hints)
+    if twin is None or not twin.is_note:
         return None
     return twin if (twin.step, twin.octave) == (event.step, event.octave) else None
 
 
+def _same_event(event: Event, hints: Hints) -> Event | None:
+    """The reading's event this event was (the app keeps the id), whatever the user changed in it: the marks drawn
+    over and under it stay its own."""
+    twin = hints.events.get(event.note_id or "")
+    return None if twin is None or twin.is_grace else twin
+
+
+def carried_marks(lines: list[StaffLine]) -> frozenset[str]:
+    """The kinds of mark a corrected file holds, found in the file itself.
+
+    TODO(fermata): the app is to read and write fermatas (and may other marks later). A file that holds one proves
+    that its writer keeps that kind, and then that kind is taken from the corrected file, as the user left it. A
+    file that holds none cannot tell "kept, but none on this page" (or the user took the reading's away) from "not
+    kept", so the reading's then come back, unverified. When the package says what its MusicXML keeps (a new
+    bicim than musiki-akademisi-duzeltme/1, or a manifest field listing it), take the kinds from there instead.
+    """
+    return frozenset(mark_kind(name) for line in lines for m in line.measures for e in m.events for name in e.marks)
+
+
+def _articulation(ties: set[str], own: set[str], read: set[str]) -> tuple[str, bool]:
+    """The articulation field and whether it is unverified: the ties and the marks the corrected file holds are
+    the user's, the reading's other marks are not. A combination the vocabulary does not hold (it knows the ones
+    the Lieder set has) keeps as many of the reading's marks as it can, the fermata first: it is the mark the app
+    loses for sure and the training sets hold least."""
+    names = sorted(read)
+    subsets = [set(c) for size in range(len(names), -1, -1) for c in combinations(names, size)]
+    subsets.sort(key=lambda c: ("fermata" not in c, -len(c)))
+    for marks in subsets:
+        text = "_".join(sorted(ties | own | marks)) or empty
+        if text in _vocabulary.articulation:
+            return text, bool(read)
+    text = "_".join(sorted(ties)) or empty
+    return (text if text in _vocabulary.articulation else empty), True
+
+
+def _marks_of(event: Event, hints: Hints) -> tuple[set[str], set[str]]:
+    """The event's marks: those of the kinds the corrected file holds, from it; the others from the reading's
+    same event. A rest the user made of a note keeps only its fermata."""
+    own = {m for m in event.marks if mark_kind(m) in hints.carried}
+    same = _same_event(event, hints)
+    read = {m for m in same.marks if mark_kind(m) not in hints.carried} if same is not None else set()
+    if not event.is_note and same is not None and same.is_note:
+        read &= {"fermata"}
+    return own, read
+
+
 def event_row(event: Event, octave_shift: int, hints: Hints) -> Row:
     if not event.is_note:
-        if event.measure_rest or (event.type == "whole" and not event.tuplet):
-            return Row("rest_1", empty, empty, empty, "upper")
-        return Row(f"rest_{_kern(event)}{'.' * event.dots}", empty, empty, empty, "upper")
+        rhythm = ("rest_1" if event.measure_rest or (event.type == "whole" and not event.tuplet)
+                  else f"rest_{_kern(event)}{'.' * event.dots}")
+        own, read = _marks_of(event, hints)
+        articulation, doubtful = _articulation(set(), own, read)
+        return Row(rhythm, empty, empty, articulation, "upper",
+                   frozenset({"articulation"}) if doubtful else frozenset())
     if event.drawn is not None and event.drawn.startswith("unknown:"):
         raise LabelError(f"bilinmeyen arıza: {event.drawn[8:]}")
     rhythm = f"note_{_kern(event)}{'G' if event.is_grace else ''}{'.' * event.dots}"
@@ -674,12 +741,9 @@ def event_row(event: Event, octave_shift: int, hints: Hints) -> Row:
             # the app wants a sign where the reading saw none and still heard the same pitch
             unverified.add("lift")
     ties = {name for name, on in (("tieStart", event.tie_start), ("tieStop", event.tie_stop)) if on}
-    marks = set(twin.marks) if twin is not None else set()
-    articulation = "_".join(sorted(ties | marks)) or empty
-    if marks:
-        unverified.add("articulation")
-    if articulation not in _vocabulary.articulation:
-        articulation = "_".join(sorted(ties)) or empty
+    own, read = _marks_of(event, hints)
+    articulation, doubtful = _articulation(ties, own, read)
+    if doubtful:
         unverified.add("articulation")
     return Row(rhythm, pitch, lift, articulation, "upper", frozenset(unverified))
 

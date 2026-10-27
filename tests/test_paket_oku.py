@@ -19,6 +19,7 @@ from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.transformer.vocabulary import EncodedSymbol
 from training.duzeltme.etiket import (
     APP_COMMA,
+    _articulation,
     Row,
     read_lines,
     round_trip,
@@ -697,6 +698,87 @@ class Inserted(unittest.TestCase):
                  {"duzeltilmis": [3], "porte": None, "parti": 1, "partiPortesi": 2},
                  {"duzeltilmis": [3], "oncekiModelOlcusu": 2}]
         self.assertEqual(inserted_for_line(items, (1, 1), staffs), [items[0], items[2], items[4]])
+
+
+FERMATA_1 = READ_1.replace("note_2 C5 N slurStop upper", "note_2 C5 N fermata_slurStop upper")
+
+
+def with_fermata(xml: str, note_id: str) -> str:
+    """The corrected file with a fermata on one note, as the app will write it once it keeps fermatas."""
+    start = xml.index(f'<note id="{note_id}">')
+    end = xml.index("</note>", start)
+    return xml[:end] + "<notations><fermata/></notations>" + xml[end:]
+
+
+def replace_note(xml: str, note_id: str, note: str) -> str:
+    start = xml.index(f'<note id="{note_id}">')
+    end = xml.index("</note>", start) + len("</note>")
+    return xml[:start] + note + xml[end:]
+
+
+def first_staff(root: Path, **kwargs) -> object:  # noqa: ANN003
+    [result] = read_packages([str(single_package(root, **kwargs))], Options())
+    return by_staff(result)[1], result
+
+
+class Marks(unittest.TestCase):
+    """The app keeps no fermata, slur or articulation: they come from the reading, unverified."""
+
+    def test_fermata_comes_from_the_reading_unverified(self) -> None:
+        self.assertNotEqual(FERMATA_1, READ_1)
+        with tempfile.TemporaryDirectory() as tmp:
+            staff, result = first_staff(Path(tmp), read=(FERMATA_1, READ_2))
+        self.assertTrue(staff.accepted, staff.reasons)
+        self.assertEqual(row_texts(staff.rows)[-2], "note_2 C5 ?N ?fermata_slurStop upper")
+        self.assertEqual(read_token_lines(row_texts(staff.rows))[-2].unverified, {"lift", "articulation"})
+        self.assertEqual(staff.round_trip, "tamam")
+        self.assertFalse(any("taşıyor" in w for w in result.warnings))
+
+    def test_fermata_stays_on_a_note_whose_pitch_the_user_corrected(self) -> None:
+        corrected = replace_note(single_corrected(), "m2n2", app_note("m2n2", "B4", "half", -1))
+        records = single_records()
+        records["olcular"][1].update({"durum": "duzeltildi", "turler": ["perde"]})
+        with tempfile.TemporaryDirectory() as tmp:
+            staff, _ = first_staff(Path(tmp), read=(FERMATA_1, READ_2), corrected=corrected, records=records)
+        self.assertTrue(staff.accepted, staff.reasons)
+        # the courtesy natural was the old note's; the fermata and the slur's end stay on the note
+        self.assertEqual(row_texts(staff.rows)[-2], "note_2 B4 _ ?fermata_slurStop upper")
+        self.assertEqual(staff.round_trip, "tamam")
+
+    def test_fermata_over_a_rest(self) -> None:
+        resting = READ_1.replace("note_4 C5 _ _ upper\nbarline", "rest_4 _ _ fermata upper\nbarline")
+        self.assertNotEqual(resting, READ_1)
+        corrected = replace_note(single_corrected(), "m1n4", app_note("m1n4", None, "quarter"))
+        # and a note with a fermata and a slur the user made a rest: only the fermata goes with it
+        rested = replace_note(single_corrected(), "m2n2", app_note("m2n2", None, "half"))
+        records = single_records()
+        records["olcular"][1].update({"durum": "duzeltildi", "turler": ["perde"]})
+        with tempfile.TemporaryDirectory() as tmp:
+            on_rest, _ = first_staff(Path(tmp) / "a", read=(resting, READ_2), corrected=corrected)
+            made_rest, _ = first_staff(Path(tmp) / "b", read=(FERMATA_1, READ_2), corrected=rested, records=records)
+        self.assertEqual(row_texts(on_rest.rows)[6], "rest_4 _ _ ?fermata upper")
+        self.assertEqual(row_texts(made_rest.rows)[-2], "rest_2 _ _ ?fermata upper")
+        self.assertEqual((on_rest.round_trip, made_rest.round_trip), ("tamam", "tamam"))
+
+    def test_a_combination_the_vocabulary_lacks_keeps_the_fermata(self) -> None:
+        self.assertEqual(_articulation({"tieStop"}, set(), {"fermata", "slurStart", "staccato"}),
+                         ("fermata_tieStop", True))
+        self.assertEqual(_articulation(set(), set(), {"slurStop", "staccato"}), ("slurStop_staccato", True))
+        self.assertEqual(_articulation({"tieStart"}, set(), set()), ("tieStart", False))
+        crowded = READ_2.replace("note_1 A4 _ tieStop upper", "note_1 A4 _ fermata_slurStart_staccato_tieStop upper")
+        with tempfile.TemporaryDirectory() as tmp:
+            [result] = read_packages([str(single_package(Path(tmp), read=(READ_1, crowded)))], Options())
+        self.assertEqual(row_texts(by_staff(result)[2].rows)[-2], "note_1 A4 _ ?fermata_tieStop upper")
+
+    def test_marks_the_corrected_file_holds_are_taken_from_it(self) -> None:
+        # once the app keeps fermatas: its fermata is the user's, and a fermata it does not have is not there
+        corrected = with_fermata(single_corrected(), "m1n4")
+        with tempfile.TemporaryDirectory() as tmp:
+            staff, result = first_staff(Path(tmp), read=(FERMATA_1, READ_2), corrected=corrected)
+        rows = row_texts(staff.rows)
+        self.assertEqual(rows[6], "note_4 C5 _ fermata upper")
+        self.assertEqual(rows[-2], "note_2 C5 ?N ?slurStop upper")  # slurs are still the reading's
+        self.assertIn("düzeltilmiş nota şu işaretleri kendisi taşıyor: fermata", result.warnings)
 
 
 class Measures(unittest.TestCase):

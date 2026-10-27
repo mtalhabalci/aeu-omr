@@ -76,6 +76,7 @@ from training.duzeltme.etiket import (
     read_lines,
     round_trip,
     row_texts,
+    carried_marks,
     staff_rows,
     writer_defaults,
 )
@@ -665,6 +666,9 @@ def process_package(package: Package, options: Options) -> PackageResult:
         corrected = read_lines(package.text(name), APP_COMMA)
     except (ET.ParseError, ValueError) as error:
         raise PackageError(f"{package.name}: {name} okunamadı ({error})") from error
+    carried = carried_marks(corrected)  # the marks the app's file holds itself (none yet: see carried_marks)
+    if carried:
+        result.warnings.append(f"düzeltilmiş nota şu işaretleri kendisi taşıyor: {', '.join(sorted(carried))}")
     try:
         model = read_lines(package.text("model.musicxml"), HOMR_COMMA)
     except Exception as error:  # noqa: BLE001
@@ -710,6 +714,7 @@ def process_package(package: Package, options: Options) -> PackageResult:
         where = f"parti {key[0]}, porte {key[1]}: " if several else ""
         result.defaults += [where + found for found in writer_defaults(line, model_line, meter_set_first)]
         for s, hint in hints.items():
+            hint.carried = carried
             all_hints[id(staffs[s])] = hint
 
     # tokens, and the round trip line by line
