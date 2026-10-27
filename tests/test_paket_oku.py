@@ -10,6 +10,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+from fractions import Fraction
 from pathlib import Path
 
 import cv2
@@ -19,7 +20,10 @@ from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.transformer.vocabulary import EncodedSymbol
 from training.duzeltme.etiket import (
     APP_COMMA,
+    Event,
+    Hints,
     _articulation,
+    _marks_of,
     Row,
     read_lines,
     round_trip,
@@ -111,7 +115,7 @@ def page_png(boxes: list[list[int]], width: int = 1920, height: int = 1300) -> b
 
 def write_package(root: Path, files: dict[str, object], several: dict | None = None, image: bytes | None = None,
                   form: str = "musiki-akademisi-duzeltme/1", folder_name: str = FOLDER, version: int = 1,
-                  upload: str | None = None, app_version: str | None = None) -> Path:
+                  upload: str | None = None, app_version: str | None = None, marks: list | None = None) -> Path:
     folder = root / folder_name
     folder.mkdir(parents=True)
     for name, content in files.items():
@@ -131,6 +135,8 @@ def write_package(root: Path, files: dict[str, object], several: dict | None = N
         manifest["anonimYukleme"] = upload
     if app_version:
         manifest["uygulamaSurumu"] = app_version
+    if marks is not None:
+        manifest["isaretler"] = marks
     (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (folder / "tempolar.json").write_text('{"kaynak": "musicxml", "kayitlar": []}', encoding="utf-8")
     if "islemler.json" not in files:
@@ -200,7 +206,7 @@ def single_records(fourth: str = "onaylandi", third_kinds: tuple = ("perde",)) -
 def single_package(root: Path, image: bool = True, folder_name: str = FOLDER, version: int = 1,
                    read: tuple[str, str] = (READ_1, READ_2), corrected: str | None = None, records: dict | None = None,
                    operations: list | None = None, upload: str | None = None, page: bytes | None = None,
-                   **kwargs) -> Path:
+                   app_version: str | None = None, marks: list | None = None, **kwargs) -> Path:
     corrected = corrected or single_corrected(kwargs.pop("second_c5_sharp_unsigned", False))
     staffs = [
         {"porte": 1, "sayfa": 1, "kutu": SINGLE_BOXES[0], "olcuBas": 1, "olcuSon": 2},
@@ -218,7 +224,8 @@ def single_package(root: Path, image: bool = True, folder_name: str = FOLDER, ve
     if operations is not None:
         files["islemler.json"] = operations
     image_bytes = (page or page_png(SINGLE_BOXES)) if image else None
-    return write_package(root, files, image=image_bytes, folder_name=folder_name, version=version, upload=upload)
+    return write_package(root, files, image=image_bytes, folder_name=folder_name, version=version, upload=upload,
+                         app_version=app_version, marks=marks)
 
 
 # --- a multi-part page: voice + piano, two systems; the piano read by the base model ------------------------------
@@ -608,6 +615,20 @@ class ApprovalOfEveryPart(unittest.TestCase):
         self.assertTrue(new[5].accepted, new[5].reasons)  # a structural edit, and the user approved the measure
         self.assertIn("yalniz-yapisal", reasons(old[5]))  # an approval does not count there anyway
 
+    def test_a_fermata_added_is_the_chosen_parts_own_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = multi_package(Path(tmp), app_version="83ff24b")
+            doc = json.loads((folder / "olcular.json").read_text(encoding="utf-8"))
+            for i in (3, 4):  # the voice and the piano's right hand of system 2
+                doc["olcular"][i].update({"durum": "duzeltildi", "turler": ["fermata"], "onaylandi": False})
+            (folder / "olcular.json").write_text(json.dumps(doc), encoding="utf-8")
+            taken = self.staffs_of(folder, Options())
+            notes_only = self.staffs_of(folder, Options(notes_only=True))
+        self.assertTrue(taken[4].accepted, taken[4].reasons)  # sent to this part only, unlike a structural edit
+        self.assertIn("yalniz-isaret", reasons(notes_only[4]))  # it touches no note
+        # on a staff the base model read a fermata says nothing of the koma signs
+        self.assertEqual(reasons(taken[5]), {"yalniz-isaret", "aeu-denetlenmedi"})
+
     def test_single_part_approval_and_structural_edit_are_that_parts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             records = single_records(third_kinds=("isaret",))
@@ -764,7 +785,8 @@ def first_staff(root: Path, **kwargs) -> object:  # noqa: ANN003
 
 
 class Marks(unittest.TestCase):
-    """The app keeps no fermata, slur or articulation: they come from the reading, unverified."""
+    """The app keeps no slur or articulation, and fermatas only from the release that lists them (isaretler): the
+    others come from the reading, unverified."""
 
     def test_fermata_comes_from_the_reading_unverified(self) -> None:
         self.assertNotEqual(FERMATA_1, READ_1)
@@ -812,15 +834,45 @@ class Marks(unittest.TestCase):
             [result] = read_packages([str(single_package(Path(tmp), read=(READ_1, crowded)))], Options())
         self.assertEqual(row_texts(by_staff(result)[2].rows)[-2], "note_1 A4 _ ?fermata_tieStop upper")
 
-    def test_marks_the_corrected_file_holds_are_taken_from_it(self) -> None:
-        # once the app keeps fermatas: its fermata is the user's, and a fermata it does not have is not there
+    def test_marks_the_manifest_lists_are_taken_from_the_corrected_file(self) -> None:
+        # the app keeps fermatas: its fermata is the user's, and a fermata it does not have is not there
         corrected = with_fermata(single_corrected(), "m1n4")
+        kept = ["fermata", "tied", "tuplet"]
         with tempfile.TemporaryDirectory() as tmp:
-            staff, result = first_staff(Path(tmp), read=(FERMATA_1, READ_2), corrected=corrected)
+            staff, result = first_staff(Path(tmp), read=(FERMATA_1, READ_2), corrected=corrected,
+                                        app_version="83ff24b", marks=kept)
         rows = row_texts(staff.rows)
         self.assertEqual(rows[6], "note_4 C5 _ fermata upper")
         self.assertEqual(rows[-2], "note_2 C5 ?N ?slurStop upper")  # slurs are still the reading's
-        self.assertIn("düzeltilmiş nota şu işaretleri kendisi taşıyor: fermata", result.warnings)
+        self.assertEqual(result.warnings, [])
+
+    def test_without_the_list_or_the_app_version_marks_are_the_readings(self) -> None:
+        corrected = with_fermata(single_corrected(), "m1n4")
+        cases = {"liste yok": {}, "surum yok": {"marks": ["fermata", "tied", "tuplet"]},
+                 "eski kayit": {"app_version": "83ff24b", "marks": ["tied", "tuplet"]}}
+        results = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, extra in cases.items():
+                results[name] = first_staff(Path(tmp) / name.replace(" ", "-"), read=(FERMATA_1, READ_2),
+                                            corrected=corrected, **extra)
+        for name, (staff, result) in results.items():
+            rows = row_texts(staff.rows)
+            # the reading has no fermata on m1n4; the file's one is no proof of what the user kept
+            self.assertEqual(rows[6], "note_4 C5 _ _ upper", name)
+            self.assertEqual(rows[-2], "note_2 C5 ?N ?fermata_slurStop upper", name)
+            self.assertIn("isaretler'de olmayan işaretler taşıyor (fermata)", " ".join(result.warnings), name)
+        self.assertIn("sekmeden", " ".join(results["surum yok"][1].warnings))
+
+    def test_a_grace_notes_fermata_is_the_readings(self) -> None:
+        def grace(note_id: str, marks: tuple[str, ...]) -> Event:
+            return Event(is_note=True, is_grace=True, measure_rest=False, step="D", octave=5, commas=0, drawn=None,
+                         type="eighth", dots=0, tuplet=None, duration=Fraction(0), tie_start=False, tie_stop=False,
+                         marks=marks, note_id=note_id, app_id=note_id, offset=Fraction(0))
+
+        read = grace("m1g1", ("fermata",))
+        kept = Hints(events={"m1g1": read}, carried=frozenset({"fermata"}))
+        self.assertEqual(_marks_of(grace("m1g1", ()), kept), (set(), {"fermata"}))
+        self.assertEqual(_marks_of(grace("m1g1", ()), Hints(events={"m1g1": read})), (set(), set()))
 
 
 class Measures(unittest.TestCase):

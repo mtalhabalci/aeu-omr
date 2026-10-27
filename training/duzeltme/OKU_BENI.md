@@ -39,7 +39,9 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    bütün porteyi dışarıda bırakır (`bakilmadi`). Gerekçe: bakılmamış ölçü modelin kendi okumasıdır; doğru
    sayılırsa model kendi hatasını öğrenir.
 2. **Temel modelin okuduğu porte** (`aeuDenetlenmeli: true`): AEU koma arızalarını tanımaz, düz diyez/bemol
-   yazmış olabilir. Bütün ölçüleri bakılmadıkça alınmaz, `--olcu-maskele` ile de (`aeu-denetlenmedi`).
+   yazmış olabilir. Bütün ölçüleri bakılmadıkça alınmaz, `--olcu-maskele` ile de (`aeu-denetlenmedi`). Her ölçüsü
+   ya onaylanmış ya da notasına dokunan bir düzeltme görmüş olmalı: yalnız yapısal düzeltme ya da fermata o
+   ölçünün koma arızalarına bakıldığını göstermez (`--yalniz-not` bu portelerde hep açık sayılır).
    **Çok partili pakette yapısal düzeltme denetim sayılmaz** (`yalniz-yapisal`): tekrar, donanım, ölçü işareti,
    ölçü çizgisi gibi işlemleri uygulama her sürümde tasarım gereği bütün partilere uygular (parti seçici seçili
    partiye yalnız notaya dokunan işlemleri gönderir). Yalnız yapısal türlerle `duzeltildi` olmuş bir ölçü, o
@@ -90,8 +92,11 @@ düzeltilmedi); bütün porte kuralı daha az ama temiz veri verir.
 **`--yalniz-not`**: `duzeltildi` ölçü yalnız `turler`'i nota düzeyinde bir düzeltme içeriyorsa (`perde`, `ariza`,
 `sure`, `nota-fazla`, `nota-eksik`, `bag`, `susleme`) bakılmış sayılır. Yapısal düzeltmeler (`isaret`, `donanim`,
 `olcu-isareti`, `olcu-cizgisi`) bütün partilere birden uygulanır ve çok partili notada her porteyi `duzeltildi`
-yapar; kullanıcı o partinin notalarına bakmamış olabilir (`yalniz-yapisal`). Tek partide yapısal düzeltmeyi
-yapan zaten o porteye bakıyordur, bu yüzden varsayılan kapalı; **çok partili paketlerde açılması önerilir**.
+yapar; kullanıcı o partinin notalarına bakmamış olabilir (`yalniz-yapisal`). Fermata ekleme/kaldırma (`fermata`)
+yalnız seçili partiye gider ama notaya dokunmaz: `--yalniz-not` ile o da sayılmaz (`yalniz-isaret`); seçenek
+kapalıyken çok partili pakette de partinin kendi düzeltmesi olarak sayılır. Tek partide yapısal düzeltmeyi yapan
+zaten o porteye bakıyordur, bu yüzden varsayılan kapalı (çok partili pakette yapısal düzeltme seçenekten bağımsız
+olarak sayılmaz, yukarıda).
 
 ## Etiket nasıl yazılır
 
@@ -115,17 +120,28 @@ onaylayamaz:
   olaydan (`<note id>`) alınır, kullanıcı perdesini ya da süresini değiştirse de (`note_2 B4 _ ?fermata_slurStop
   upper`); susun fermatası da (`rest_4 _ _ ?fermata upper`); kullanıcının susa çevirdiği notada yalnız fermata
   kalır. Birleşim sözlükte yoksa sözlükte olan en büyük alt kümesi yazılır, fermata önce. Sezura'nın jetonu yoktur
-  (sözlük tutmaz), süsleme notalarının işaretleri eşlenemez;
+  (sözlük tutmaz), süsleme notalarının işaretleri eşlenemez (fermata dışında, aşağıda). Fermata, `isaretler`'de
+  olduğu sürümde düzeltilmiş dosyadan gelir (aşağıda);
 - bağ (`tieStart`, `tieStop`) düzeltilmiş dosyadan gelir, doğrulanmış;
 - kesik/çift/kalın ölçü çizgisi (`?dashedbarline`);
 - portenin başında donanım basılı mı: okuma görmediyse yazılmaz.
 
-Uygulama fermatayı (sonra belki öteki işaretleri) tutmaya başlayınca o işaret düzeltilmiş dosyadan alınır:
-okuyucu bunu dosyanın kendisinden anlar. Düzeltilmiş dosyada bir türden tek bir işaret bile varsa (ör.
-`<fermata/>`) o tür kullanıcınındır, doğrulanmış yazılır ve okumanınki kullanılmaz; raporda paket uyarısı
-"düzeltilmiş nota şu işaretleri kendisi taşıyor". Hiç yoksa okumanınki `?` ile gelir: dosya "tutuyor ama bu
-sayfada yok" ile "tutmuyor"u ayıramaz. Paket bunu biçim sürümüyle ya da bir alanla söylediğinde
-(`etiket.py carried_marks` içindeki TODO) oradan alınmalı.
+**Uygulamanın tuttuğu işaretler** (`isaretler`): fermata desteğiyle gelen sürüm, düzeltilmiş dosyaya
+yazılabilen `<notations>` türlerini manifest'e MusicXML adlarıyla yazar (yeni kayıtta `["fermata", "tied",
+"tuplet"]`; liste dosyanın `<encoding><supports element=… type="yes"/>` satırlarından çıkar). Listede olan ve
+sözlükte işaret olan tür (`fermata`; ileride `slur`, `arpeggiate`) kullanıcınındır: düzeltilmiş dosyadan
+doğrulanmış yazılır, dosyada yoksa yoktur (kullanıcı kaldırmış ya da sayfada yok), okumanınki kullanılmaz. Ters
+fermata ve öteki şekiller (`type="inverted"`, angled, square) sözlükte tek `fermata` jetonudur. `tied` ve `tuplet`
+uygulamanın hep tuttuklarıdır. Listede olmayan her tür okumadan `?` ile gelir. Okumadan alınanlar:
+- **liste yoksa** (eski paket) bütün işaretler;
+- **liste var ama `uygulamaSurumu` null ise** bütün işaretler: yayından önce açılmış sekmeden kaydedilen dosya
+  fermatayı desteklediğini bildirir, ama okumadaki fermatalar o sekmede yüklenirken düşmüş olabilir (paket uyarısı);
+- **listede fermata yoksa** (fermata desteğinden önce kaydedilmiş sürüm, `["tied", "tuplet"]`) fermata: o
+  dosyalarda fermata kayıt sırasında düşmüştü, eksik fermata "kullanıcı kaldırdı" demek değildir;
+- **süsleme notasının fermatası**: uygulama tutamaz, okumadaki aynı süsleme notasında fermata varsa `?` ile.
+Uygulamanın tutamadığı öteki fermatalar (ölçü çizgisinde, aynı notada ikinci, ikinci seste eşi olmayan) modelin
+sözlüğünde de yoktur ya da porte zaten alınmaz (`akor-ikinci-ses`). Dosya listede olmayan bir işaret taşırsa
+paket uyarısı yazılır ve okumanınki alınır; listede bu okuyucunun bilmediği tür varsa da uyarı yazılır.
 
 **Yazıcının varsayılanları** (uygulamada düzenlenemez, etiket bunları kullanıcının yazdığından ayırır; rapor
 `yaziciVarsayilanlari`'nda sayar):

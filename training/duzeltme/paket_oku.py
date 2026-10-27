@@ -20,7 +20,8 @@ Which staffs (see OKU_BENI.md):
   nobody looked at (bakilmadi) leaves the whole staff out. With --olcu-maskele such a staff is taken all the same,
   its unchecked measures written with every field unverified ("?"), which the training loss skips;
 - a staff the base model read (aeuDenetlenmeli: it does not know the AEU koma accidentals) only when every measure
-  on it was checked, also with --olcu-maskele;
+  on it was checked, also with --olcu-maskele, each by an approval or a correction of its notes (a structural edit
+  or a fermata says nothing of its koma signs);
 - in a score of several parts a structural edit is put on every part, by design: a measure corrected with structural
   kinds only is no check of a staff there (yalniz-yapisal). An app that does not name itself (manifest uygulamaSurumu
   missing or null: every version before the field) put an approval on every staff of the measure, every part, too:
@@ -90,6 +91,14 @@ SERVICE_LAYOUT = "duzeltilmis-servis-duzeni.musicxml"
 PAGE_WIDTH = 1920
 # the kinds of correction that touch a measure's notes; the others are structural (music-core duzenle/fark.ts)
 NOTE_KINDS = frozenset({"perde", "ariza", "sure", "nota-fazla", "nota-eksik", "bag", "susleme"})
+# the kinds the app sends to the part the user chose only, of a score of several parts: the note kinds and a fermata
+# added or taken away (which does not touch the notes)
+PART_KINDS = NOTE_KINDS | {"fermata"}
+# the manifest's isaretler: the <notations> kinds the corrected file is written with, by MusicXML name. Those that are
+# marks of homr's vocabulary (etiket.mark_kind) are then the user's; tied and tuplet the app has always kept, and the
+# label takes them from the corrected file in any case
+NOTATION_MARKS = {"fermata": "fermata", "slur": "slur", "arpeggiate": "arpeggiate"}
+ALWAYS_KEPT = frozenset({"tied", "tuplet"})
 
 git_root = Path(__file__).resolve().parent.parent.parent
 
@@ -273,24 +282,30 @@ def check_manifest(package: Package) -> dict:
 # --- which measures are on which staff ------------------------------------------------------------------------------
 
 
-def reviewed(record: dict, options: Options, checks: Checks | None = None) -> bool:
+def reviewed(record: dict, options: Options, checks: Checks | None = None, notes_needed: bool = False) -> bool:
     """Whether the user looked at this measure of this staff. A record's onaylandi (newer packages) says the user
     approved it whatever its durum: a structural edit made the measure duzeltildi, the approval is still the user's
-    look at this staff."""
+    look at this staff. notes_needed (a staff the base model read, whose koma signs are the risk): a correction counts
+    only when it touched the notes, as with --yalniz-not."""
     checks = checks or Checks()
     if record.get("durum") == "onaylandi" or record.get("onaylandi") is True:
         if checks.approval:
             return True
     if record.get("durum") == "duzeltildi":
-        notes = bool(NOTE_KINDS & set(record.get("turler") or []))
-        return notes or (checks.structure and not options.notes_only)
+        kinds = set(record.get("turler") or [])
+        if NOTE_KINDS & kinds:
+            return True
+        # a fermata is the chosen part's own edit, a structural one every part's
+        return not (options.notes_only or notes_needed) and (bool(PART_KINDS & kinds) or checks.structure)
     return False
 
 
 def _unreviewed_reason(record: dict) -> str:
     if record.get("durum") == "onaylandi":
         return "onay-butun-partilere"
-    return "yalniz-yapisal" if record.get("durum") == "duzeltildi" else "bakilmadi"
+    if record.get("durum") == "duzeltildi":  # its kinds touch no note: a mark (--yalniz-not), or the structure
+        return "yalniz-isaret" if PART_KINDS & set(record.get("turler") or []) else "yalniz-yapisal"
+    return "bakilmadi"
 
 
 def checks_of(manifest: dict, entries: list[dict], options: Options) -> Checks:
@@ -302,6 +317,23 @@ def checks_of(manifest: dict, entries: list[dict], options: Options) -> Checks:
     several = len({e.get("parti", 0) for e in entries}) > 1
     return Checks(approval=not several or bool(manifest.get("uygulamaSurumu")) or options.approval_enough,
                   structure=not several)
+
+
+def kept_marks(manifest: dict) -> tuple[frozenset[str], list[str]]:
+    """The kinds of mark (etiket.mark_kind) the corrected file holds as the user left them, and notes for the report:
+    the manifest's isaretler, from an app that names itself. Without the list (an older package) every mark is the
+    reading's, unverified. A tab opened before a release may save a file that lists a kind its reader had dropped on
+    loading (uygulamaSurumu null): there too."""
+    listed = manifest.get("isaretler")
+    if listed is None:
+        return frozenset(), []
+    marks = set(listed) - ALWAYS_KEPT
+    if not manifest.get("uygulamaSurumu"):
+        return frozenset(), ([f"isaretler ({', '.join(sorted(marks))}) uygulamaSurumu olmadan: yayından önce açılmış "
+                              "sekmeden kayıt olabilir, işaretler okumadan alındı"] if marks else [])
+    unknown = sorted(marks - set(NOTATION_MARKS))
+    notes = [f"isaretler'de bu okuyucunun bilmediği türler: {', '.join(unknown)} (okumadan alındı)"] if unknown else []
+    return frozenset(NOTATION_MARKS[n] for n in marks if n in NOTATION_MARKS), notes
 
 
 def _model_measure(model: StaffLine | None, number: int) -> Measure | None:
@@ -489,13 +521,13 @@ def plan_line(
             for s in holders:
                 staffs[s].reject("olcu-belirsiz", f"düzeltilmiş ölçü {corrected.measures[index].number} iki portede")
 
-    def checked(index: int) -> tuple[bool, str]:
+    def checked(index: int, notes_needed: bool) -> tuple[bool, str]:
         """Whether every record behind a corrected measure says it was looked at."""
         behind = [record_of[m] for m, found in of_model.items() if index in found]
         if index in inserted_at:
             behind.append({"durum": "duzeltildi", "turler": inserted_at[index].get("turler") or []})
         for record in behind:
-            if not reviewed(record, options, checks):
+            if not reviewed(record, options, checks, notes_needed):
                 return False, _unreviewed_reason(record)
         return bool(behind), ""
 
@@ -514,13 +546,13 @@ def plan_line(
             staff.reject("olcu-yok", "portede düzeltilmiş ölçü kalmadı")
         unchecked: dict[str, list[int]] = defaultdict(list)
         for piece in pieces:
-            ok, why = checked(piece.measure)
+            ok, why = checked(piece.measure, staff.base_model)
             if not ok:
                 piece.masked = True
                 unchecked[why or "bakilmadi"].append(corrected.measures[piece.measure].number)
         for number in staff.model_measures:  # measures the user took out are no piece, but were looked at or not
             record = record_of[number]
-            if not of_model.get(number) and not reviewed(record, options, checks):
+            if not of_model.get(number) and not reviewed(record, options, checks, staff.base_model):
                 unchecked[_unreviewed_reason(record)].append(number)
         if unchecked:
             detail = "; ".join(f"{why}: ölçü {', '.join(map(str, sorted(set(n))))}" for why, n in unchecked.items())
@@ -689,9 +721,12 @@ def process_package(package: Package, options: Options) -> PackageResult:
         corrected = read_lines(package.text(name), APP_COMMA)
     except (ET.ParseError, ValueError) as error:
         raise PackageError(f"{package.name}: {name} okunamadı ({error})") from error
-    carried = carried_marks(corrected)  # the marks the app's file holds itself (none yet: see carried_marks)
-    if carried:
-        result.warnings.append(f"düzeltilmiş nota şu işaretleri kendisi taşıyor: {', '.join(sorted(carried))}")
+    carried, notes = kept_marks(manifest)
+    result.warnings += notes
+    stray = carried_marks(corrected) - carried
+    if stray:
+        result.warnings.append(f"düzeltilmiş nota isaretler'de olmayan işaretler taşıyor ({', '.join(sorted(stray))}): "
+                               "okumadakiler alındı")
     try:
         model = read_lines(package.text("model.musicxml"), HOMR_COMMA)
     except Exception as error:  # noqa: BLE001

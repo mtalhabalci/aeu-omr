@@ -11,7 +11,8 @@ trained on (see training/datasets/convert_symbtr.py EngravingState):
   the page prints is not there;
 - it has no barline styles: every barline is plain except the light-heavy one it puts after the last measure, and a
   repeat's;
-- no slurs, no fermatas and no other articulations, only ties (MARK_KINDS);
+- no slurs and no other articulations, only ties, and fermatas from the app version that lists them in the
+  manifest's isaretler (MARK_KINDS, Hints.carried);
 - a time signature in the first measure whether or not the page prints one, and a key only where it changes;
 - one voice per staff, without chords.
 
@@ -143,8 +144,9 @@ ORNAMENT_NAMES = {
 # (music-core musicxml.ts) drops <notations> but for <tied> and <tuplet>, and duzeltilmis.musicxml is written anew
 # from its Score (musicxml-yaz.ts), so every slur, fermata, staccato, staccatissimo, tenuto, accent, breath mark,
 # trill, turn, tremolo and arpeggio the model read is gone from the corrected file. Those marks are taken from the
-# reading, by note id, unverified (MARK_KINDS, carried_marks). A caesura has no token: homr's vocabulary leaves it
-# out, so the model never reads one.
+# reading, by note id, unverified (MARK_KINDS), but for the kinds the manifest's isaretler says the app keeps (the
+# fermata, from the release that reads and writes it: paket_oku.kept_marks, Hints.carried). A caesura has no token:
+# homr's vocabulary leaves it out, so the model never reads one.
 MARK_KINDS = ("slur", "fermata", "staccato", "staccatissimo", "tenuto", "accent", "breathMark", "trill", "turn",
               "tremolo", "arpeggiate")
 
@@ -678,14 +680,9 @@ def _same_event(event: Event, hints: Hints) -> Event | None:
 
 
 def carried_marks(lines: list[StaffLine]) -> frozenset[str]:
-    """The kinds of mark a corrected file holds, found in the file itself.
-
-    TODO(fermata): the app is to read and write fermatas (and may other marks later). A file that holds one proves
-    that its writer keeps that kind, and then that kind is taken from the corrected file, as the user left it. A
-    file that holds none cannot tell "kept, but none on this page" (or the user took the reading's away) from "not
-    kept", so the reading's then come back, unverified. When the package says what its MusicXML keeps (a new
-    bicim than musiki-akademisi-duzeltme/1, or a manifest field listing it), take the kinds from there instead.
-    """
+    """The kinds of mark a corrected file holds, found in the file itself. Which kinds are the user's is the
+    manifest's to say (paket_oku.kept_marks): a file without a fermata cannot tell "kept, none on this page" from
+    "not kept"; this only checks the file against that list."""
     return frozenset(mark_kind(name) for line in lines for m in line.measures for e in m.events for name in e.marks)
 
 
@@ -707,12 +704,17 @@ def _articulation(ties: set[str], own: set[str], read: set[str]) -> tuple[str, b
 
 def _marks_of(event: Event, hints: Hints) -> tuple[set[str], set[str]]:
     """The event's marks: those of the kinds the corrected file holds, from it; the others from the reading's
-    same event. A rest the user made of a note keeps only its fermata."""
+    same event. A rest the user made of a note keeps only its fermata. The app holds no fermata on a grace note: a
+    grace note's fermata is the reading's, unverified, whatever the app keeps."""
     own = {m for m in event.marks if mark_kind(m) in hints.carried}
     same = _same_event(event, hints)
     read = {m for m in same.marks if mark_kind(m) not in hints.carried} if same is not None else set()
     if not event.is_note and same is not None and same.is_note:
         read &= {"fermata"}
+    if event.is_grace and "fermata" in hints.carried:
+        grace = hints.events.get(event.note_id or "")
+        if grace is not None and grace.is_grace and "fermata" in grace.marks:
+            read.add("fermata")
     return own, read
 
 
