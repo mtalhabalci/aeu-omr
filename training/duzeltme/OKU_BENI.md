@@ -40,17 +40,20 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    sayılırsa model kendi hatasını öğrenir.
 2. **Temel modelin okuduğu porte** (`aeuDenetlenmeli: true`): AEU koma arızalarını tanımaz, düz diyez/bemol
    yazmış olabilir. Bütün ölçüleri bakılmadıkça alınmaz, `--olcu-maskele` ile de (`aeu-denetlenmedi`).
-   **Sürümünü yazmayan uygulamanın çok partili paketinde onay sayılmaz** (`onay-butun-partilere`): manifest'te
+   **Çok partili pakette yapısal düzeltme denetim sayılmaz** (`yalniz-yapisal`): tekrar, donanım, ölçü işareti,
+   ölçü çizgisi gibi işlemleri uygulama her sürümde tasarım gereği bütün partilere uygular (parti seçici seçili
+   partiye yalnız notaya dokunan işlemleri gönderir). Yalnız yapısal türlerle `duzeltildi` olmuş bir ölçü, o
+   portenin notalarına bakıldığını göstermez. Notaya dokunan türler denetim sayılır (`turler`'inde `perde`,
+   `ariza`, `sure`, `nota-fazla`, `nota-eksik`, `bag` ya da `susleme`).
+   **Sürümünü yazmayan uygulamanın çok partili paketinde onay da sayılmaz** (`onay-butun-partilere`): manifest'te
    `uygulamaSurumu` yoksa ya da null ise (o alandan önceki bütün sürümler, 413e4b9 dahil, ve yayından önce açılmış
-   sekmeden yapılan kayıtlar) uygulama bir ölçünün onayını ve yapısal düzeltmesini (tekrar, donanım, ölçü işareti,
-   ölçü çizgisi) ölçünün bütün portelerine, bütün partilere geçirmiştir; kullanıcının o partiye baktığı belli
-   değildir. Böyle pakette bir ölçü ancak notaya dokunan düzeltmeyle (`duzeltildi` ve `turler`'inde `perde`,
-   `ariza`, `sure`, `nota-fazla`, `nota-eksik`, `bag` ya da `susleme`) bakılmış sayılır; yalnız yapısal düzeltme
-   `yalniz-yapisal` olur. `uygulamaSurumu` yazan uygulamada onay yalnız kullanıcının seçtiği partiye geçer ve
-   temel modelin okuduğu portenin her ölçüsü bakılmadan düzeltme bitirilemez: orada onay o portenin denetimidir.
-   Tek partili pakette onay zaten yalnız o partinindir. `--onay-yeter` eski çok partili paketlerde de onayı ve
-   yapısal düzeltmeyi denetim sayar. Raporda paket başına `uygulamaSurumu` ve `onayButunPartilere`.
-   (Bu kural, Talha'nın kararı beklenirken konan `aeu-yalniz-onay`'ın yerini aldı: temel modelin okuduğu porte
+   sekmeden yapılan kayıtlar) uygulama bir ölçünün onayını ölçünün bütün portelerine, bütün partilere geçirmiştir.
+   `uygulamaSurumu` yazan uygulamada onay yalnız kullanıcının seçtiği partiye geçer ve temel modelin okuduğu
+   portenin her ölçüsü bakılmadan düzeltme bitirilemez: orada onay o portenin denetimidir. Tek partili pakette onay
+   da yapısal düzeltme de yalnız o partinindir. `--onay-yeter` eski çok partili paketlerde de onayı denetim sayar
+   (yapısal kuralı değiştirmez). Raporda paket başına `uygulamaSurumu`, `onayButunPartilere`,
+   `yapisalDenetimSayilmaz`.
+   (Bu kurallar, Talha'nın kararı beklenirken konan `aeu-yalniz-onay`'ın yerini aldı: temel modelin okuduğu porte
    yalnız onayla alınmıyordu.)
 3. **Üst sese indirilmiş porte** (`ustSesKirpildi: true`): servis portedeki akoru ya da ikinci sesi kırpıp yalnız
    üst sesi yazmış (`OMR_COKSES_B=0`); düzeltme sayfadaki bütün sesleri taşıyamaz, porte alınmaz

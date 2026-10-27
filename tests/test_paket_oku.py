@@ -571,7 +571,7 @@ class ApprovalOfEveryPart(unittest.TestCase):
             before = self.staffs_of(old, Options())
             enough = self.staffs_of(old, Options(approval_enough=True))
             named = self.staffs_of(new, Options())
-            # a structural edit was put on every part as well: no check of this staff in the old package
+            # a structural edit is put on every part in every version: no check of this staff in either package
             self.structural_edit_on_staff_5(old)
             self.structural_edit_on_staff_5(new)
             structural_before, structural_named = self.staffs_of(old, Options()), self.staffs_of(new, Options())
@@ -586,17 +586,22 @@ class ApprovalOfEveryPart(unittest.TestCase):
         self.assertEqual([n for n, s in enough.items() if s.accepted], [2, 4, 5, 6])
         self.assertEqual([n for n, s in named.items() if s.accepted], [2, 4, 5, 6])
         self.assertEqual(reasons(structural_before[5]), {"yalniz-yapisal", "aeu-denetlenmedi"})
-        self.assertTrue(structural_named[5].accepted, structural_named[5].reasons)
+        self.assertEqual(reasons(structural_named[5]), {"yalniz-yapisal", "aeu-denetlenmedi"})
+        self.assertTrue(structural_named[6].accepted, structural_named[6].reasons)  # approved on the chosen part
         self.assertIsNone(report["uygulamaSurumu"])
         self.assertTrue(report["onayButunPartilere"])
+        self.assertTrue(report["yapisalDenetimSayilmaz"])
         self.assertTrue(report_enough["ayarlar"]["onayYeter"])
         self.assertFalse(report_enough["paketler"][0]["onayButunPartilere"])
-        self.assertEqual([s["porte"] for s in report_enough["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 5, 6])
+        # --onay-yeter takes the approvals, not the structural edit of staff 5
+        self.assertEqual([s["porte"] for s in report_enough["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 6])
 
-    def test_single_part_approval_is_that_parts(self) -> None:
+    def test_single_part_approval_and_structural_edit_are_that_parts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            staffs = self.staffs_of(single_package(Path(tmp)), Options())
+            records = single_records(third_kinds=("isaret",))
+            staffs = self.staffs_of(single_package(Path(tmp), records=records), Options())
         self.assertTrue(staffs[1].accepted, staffs[1].reasons)  # measures 1 and 2 only approved
+        self.assertNotIn("yalniz-yapisal", reasons(staffs[2]))  # measure 3 corrected with a structural kind only
 
 
 class WriterDefaults(unittest.TestCase):
