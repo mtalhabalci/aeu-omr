@@ -179,10 +179,70 @@ girmez) servisin kendi yoluyla okundu, `olc.py` ile uzlaşılmış etiketlere g�
 **Sınırlar.**
 - Temel modelin okuduğu portede AEU arızası düz diyez/bemol olur (`aeuDenetlenmeli`). Çok sesli AEU notası için
   kalıcı çözüm iki sesliliği de bilen yeni bir model (v25).
-- Tenor anahtarını (sol-8) temel model 8'siz sol okur; perdeler bir oktav yukarı yazılır.
+- Tenor anahtarı (sol-8) modellerin sözlüğünde yok; 8'i sayfadan ayrıca okunur (aşağıda "Oktav anahtarı").
 - İç köşeli parantez (bir grubun içindeki ikinci parantez, keman I-II gibi) yazılmaz; yalnız dıştaki.
 - Ses numaraları sap yönüne göre değil zamandaki çakışmaya göre verilir (sınavda ses ayrımı katı ölçümle %70).
 - Tek porteyi saran köşeli parantez aranmaz; tek porteli sistem hep tek parçadır.
+
+## Oktav anahtarı (tenor anahtarı)
+
+Modellerin sözlüğünde 8'li sol anahtarı yok. Tenor portesi (altında küçük 8 olan sol anahtarı) `clef_G2` okunur ve
+bütün sesler bir oktav tiz çıkar. Servis, okuması sol anahtarıyla başlayan her portede 8'i sayfa resminde arar
+(`homr/octave_clef.py`):
+
+1. **Anahtar.** Portenin başında porte çizgileri silinir (çizgi üstündeki kısa dikey mürekkep). Porte başına en yakın,
+   üst çizgiyi aşan, alt çizgiye inen, orta çizgilerde de geniş olan uzun parça anahtardır. Köşeli parantezin ve
+   akoladın çubuğu orada dardır.
+2. **Rakam.** Anahtarın altındaki bantta (8va için üstündekinde), tek mürekkep parçasında üst üste iki delik aranır.
+   Boyu rakam kadar olmalı, anahtarın ortasının altında ve ucuna yakın durmalı, iki yanı boş olmalı. Ölçü numarası,
+   söz hecesi ve "O" (tek delik) böyle elenir. Anahtarın topuna değen 8 de bulunur. Bulanık ya da kaba baskıda 8'in
+   bir deliği dolabilir; o zaman tek delik 8'in üst ya da alt gözü sayılır.
+3. **OCR.** Başlık bilgisini okuyan RapidOCR'ın tanıyıcısı rakamın kutusunu okur. "8" okumazsa (güven iki delikte
+   0,5'ten, tek delikte 0,55'ten azsa) anahtar düz sol sayılır.
+
+Bulununca MusicXML'de anahtar `<clef><sign>G</sign><line>2</line><clef-octave-change>-1</clef-octave-change></clef>`
+olur (8 üstteyse `1`), portenin notaları bir oktav pes (tiz) yazılır. `uyarilar`'a "Porte 3: sol anahtarının altında
+8 var (tenor anahtarı); notalar porte üzerinde göründüklerinden bir oktav pes yazıldı. …" satırı düşer. 8 bulunmayan
+sayfanın çıktısı değişmez.
+
+Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün numarası durur, tam anahtarın üstünde
+(sınavın porte kesitlerinde bir "4" ile bir "6" orada). 8. ölçüyle başlayan bir sistem 8va anahtarı sanılırdı.
+
+**Ölçüm (27.10.2026).**
+
+| Girdi | Tenor portesi (8'li) | Bulunan | Yanlış bulunan (8'siz portelerde) |
+|---|---:|---:|---:|
+| Sınavın 76 sistemi, servisin porte bulucusu | 7 | 7 | 0 / 140 |
+| Kitabın 752 sistem resmi, servisin porte bulucusu | 72 | 56 | 0 / 1.364 |
+| Hazır porte kesitleri (1.527; 35'inde porte bulunamadı) | 69 | 57 | 0 / 1.356 |
+
+- Doğru cevap sınavda uzlaşılmış etiketler, kitapta ve kesitlerde envanterin anahtar sütunu. Kitap taramasında 85,
+  kesitlerde 67 portenin anahtarı bilinmiyor (bulunan
+  porte sayısı envanterle tutmadı ya da envanterde "?"); bunlar sayılmadı, aralarında 8 bulunan da yok. Bulunan 56
+  sistem portesine ve 57 kesite tek tek bakıldı: hepsinde anahtarın altında 8 var, kutu 8'in üstünde.
+- Kitapta kaçan 16 tenor: 7'si üç sayfanın (p193, p200, p201) pikselli taraması, 8 birkaç pikselden ibaret. 2'sinde
+  8 ince, OCR "X" okuyor. 4'ünde OCR başka harf ya da düşük güvenle "8" okuyor. 2'sinde 8 topa kaynamış, aday
+  çıkmıyor. 1'i kalın çizgili bir tarama, anahtar bulunamıyor.
+- İki işaret birlikte gerekli. Tek başına şekil (iki delik) kitapta 54 aday verdi, hepsi 8. Tek delikli 16 adayın
+  8'i 8, ötekiler "4", "6", "9", "A" (sistemlerin üst portesinin üstündekiler dahil; OCR hepsini eledi). Şekilsiz OCR, anahtarın altında sabit bir bantta sınavın
+  7 tenorundan 5'ini okudu: iki taramada bant anahtarın topunu da aldı, "B" ve "g" okundu.
+- Parti adları ("T", "Tenor") kullanılmıyor; sınavın 7 tenoru adsız da bulundu.
+- Puan. Sınavın `olc.py`'si tenor portesini, iki anahtarın oktav farkı kadar kaydırarak karşılaştırır. Bu yüzden
+  nota F1'i değişmedi (`OMR_COKSES_B` kapalı 0,713, açık 0,877); kaydırmak zorunda kaldığı porte 7'den 0'a indi.
+  Sesler kaydırmadan, yazıldığı gibi karşılaştırılınca nota F1 kapalıyken 0,679 → 0,713, açıkken 0,845 → 0,877.
+  Tenor portelerinin nota F1'i 0'dan 0,69–1,00'a çıktı (p226'nın tenoru bu sistemde yalnız sus).
+- Sınavın 69 sistemi önceki çıktıyla bayt bayt aynı (kapalı ve açık). Değişen yalnız 7 tenor sistemi: anahtara
+  `<clef-octave-change>-1</clef-octave-change>` eklendi, tenor notalarının `<octave>`'ı bir azaldı.
+- Tek porteli 30 makam sayfası (neyzen.com'dan 20, SymbTr Mus2'den 10, önceki değişikliğin bayt sınavı): MusicXML
+  ve yanıt `OMR_COKSES_B` kapalıyken de açıkken de önceki servisle bayt bayt aynı (30/30). Hiçbir portede 8
+  bulunmadı.
+- Süre: 8'siz portede arama ortalama 1,5 ms (en çok 17 ms); OCR yalnız aday bulununca çalışır, 8'li portede 8 ms.
+  Bellek değişmez (OCR başlık bilgisi için zaten yüklü).
+
+**Sınırlar.**
+- Kötü taramada 8 kaçabilir; o porte eskisi gibi bir oktav tiz yazılır.
+- 8 her portede ayrı aranır. Bir sistemde bulunup ötekinde kaçarsa parça sistemden sisteme bir oktav atlar.
+- Sistemin üst portesinde 8va aranmaz. 15'li anahtar ve 8'li fa anahtarı hiç aranmaz.
 
 ## Süre (14.10.2026, bu bilgisayar)
 
