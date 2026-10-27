@@ -30,6 +30,9 @@ class ConversionState:
         self.last_volta_measure = -10
         self.volta_open = False
         self.segnos = 0
+        # the octave change of the clef in effect on each staff (1 upper, 2 lower), from the last clef written:
+        # an octave treble clef sounds an octave lower (or higher) than the staff positions the model read
+        self.clef_octaves: dict[int, int] = {}
 
     def start_volta(self, measure_no: int) -> int:
         if measure_no == self.last_volta_measure + 1:
@@ -378,6 +381,7 @@ def build_measures(
             for should_be_clef in group.symbols:
                 if should_be_clef.rhythm.startswith("clef"):
                     build_clef(should_be_clef, attributes)
+                    state.clef_octaves[get_staff(should_be_clef)] = getattr(should_be_clef, "clef_octave", 0)
         elif rhythm.startswith("keySignature"):
             attributes = build_or_get_attributes(current_measure, last_attributes)
             build_key(symbol, attributes)
@@ -729,6 +733,10 @@ def build_clef(model_clef: EncodedSymbol, attributes: mxl.XMLAttributes) -> None
     attributes.add_child(clef)
     clef.add_child(mxl.XMLSign(value_=sign))
     clef.add_child(mxl.XMLLine(value_=int(line)))
+    octave_change = getattr(model_clef, "clef_octave", 0)
+    if octave_change:
+        # an octave clef (homr.octave_clef): -1 the tenor's treble clef with an 8 under it
+        clef.add_child(mxl.XMLClefOctaveChange(value_=octave_change))
 
 
 def build_time_signature(
@@ -993,7 +1001,11 @@ def build_note_or_rest(
     else:
         pitch = mxl.XMLPitch()
         pitch.add_child(mxl.XMLStep(value_=model_pitch[0]))
-        pitch.add_child(mxl.XMLOctave(value_=int(model_pitch[1])))
+        # the model reads a staff position; under an octave clef it sounds an octave away. This is the one place
+        # the shift is made: the makam and Western resolvers key their memory on the read pitch, which a shift of
+        # the whole staff leaves as it is
+        octave = int(model_pitch[1]) + state.clef_octaves.get(get_staff(model_note), 0)
+        pitch.add_child(mxl.XMLOctave(value_=octave))
         if model_note.lift == nonote:
             eprint("WARNING note with invalid lift", model_note)
         else:

@@ -42,6 +42,12 @@ chords and second voices are written (<chord/>, <voice>, <backup>) and single st
 off (the default), every staff is written as its top line (at each onset the highest note) and a page of single
 staffs is read exactly as before. The names printed left of a system become the parts' names (homr.part_names).
 
+Octave clefs. The vocabulary has no treble clef with a small 8 under it (a tenor's) or over it, so the models read it
+as clef_G2. On every staff whose reading starts with clef_G2 the 8 is looked for on the page (homr.octave_clef; over
+the clef not on a system's top staff, where the measure number stands); where it is found the clef is written with
+<clef-octave-change> and the staff's notes an octave lower (higher), and a warning names the staffs. A page without
+an 8 is written exactly as before.
+
 The app is not to show which open-source project the reader grew from, so the file's <software> is OMR_YAZILIM
 and no response names it: by default two names, the application's and the model's ("Musiki Akademisi OMR;AEU-OMR",
 Talha 24.10), each written as a <software> of its own.
@@ -76,6 +82,7 @@ from homr.main import ProcessingConfig, detect_staffs_in_image
 from homr.makam_key import resolve_western_sounding
 from homr.model import MultiStaff
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
+from homr.octave_clef import mark_octave_clef
 from homr.part_names import read_part_names
 from homr.score_parts import (
     ScorePlan,
@@ -345,6 +352,7 @@ class Reader:
         layouts: list[SystemLayout] = []  # every system read, in reading order
         readings: list[StaffReading] = []  # every staff read, in the order of staff_boxes
         read_by: list[str] = []  # the model that read each of them
+        octave_clefs: dict[int, list[int]] = {-1: [], 1: []}  # staff numbers (from 1) by their clef's 8: under, over
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -397,6 +405,13 @@ class Reader:
                     tensor = pad_to_3_dims(ndarray_to_tensor(gray)).to(self.device)
                     system_no, place = system_of[id(staff)]
                     symbols, by = self._read_staff(tensor, layouts[system_no].staffs > 1 or COKSES_B)
+                    try:  # a treble clef with a small 8 (a tenor's): the vocabulary has no octave clef. Over a
+                        # system's top staff stands its first measure's number, where an 8 over the clef would be
+                        symbols, octave = mark_octave_clef(symbols, preprocessed, staff, above=place > 0)
+                    except Exception:  # noqa: BLE001
+                        octave = 0
+                    if octave:
+                        octave_clefs[octave].append(len(staff_boxes) + 1)
                     readings.append(StaffReading(system_no, place, symbols))
                     read_by.append(by)
                     staff_boxes.append((page_no, [round(box[0] + staff.min_x * scale_x),
@@ -424,8 +439,10 @@ class Reader:
                 # parts by the systems' layouts and the staffs' clefs (to place a system of fewer staffs)
                 clefs: list[list[str | None]] = [[None] * layout.staffs for layout in layouts]
                 for reading in readings:
-                    clefs[reading.system][reading.staff] = next(
-                        (s.rhythm for s in reading.symbols if s.rhythm.startswith("clef_")), None)
+                    clef = next((s for s in reading.symbols if s.rhythm.startswith("clef_")), None)
+                    # a tenor's octave clef is its own clef here: it places a system of fewer staffs by the tenor
+                    clefs[reading.system][reading.staff] = None if clef is None else clef.rhythm + {
+                        -1: "-8", 1: "+8"}.get(clef.clef_octave, "")
                 plan = plan_score(layouts, clefs)
                 if not COKSES_B:  # no chords and no second voices: every staff keeps its top line
                     for number, reading in enumerate(readings, 1):
@@ -473,6 +490,14 @@ class Reader:
                             "arızaları kontrol edilmeli.")
         if reduced:
             warnings.append(f"Porte {numbered(reduced)}: akor ya da ikinci ses vardı; yalnız üst ses yazıldı.")
+        if octave_clefs[-1]:
+            warnings.append(f"Porte {numbered(octave_clefs[-1])}: sol anahtarının altında 8 var (tenor anahtarı); "
+                            "notalar porte üzerinde göründüklerinden bir oktav pes yazıldı. Anahtar yanlış "
+                            "görüldüyse bu portelerin oktavı kontrol edilmeli.")
+        if octave_clefs[1]:
+            warnings.append(f"Porte {numbered(octave_clefs[1])}: sol anahtarının üstünde 8 var; notalar porte "
+                            "üzerinde göründüklerinden bir oktav tiz yazıldı. Anahtar yanlış görüldüyse bu "
+                            "portelerin oktavı kontrol edilmeli.")
         staff_list = []
         for number, ((page_no, box), (first, last)) in enumerate(zip(staff_boxes, staff_measures, strict=False), 1):
             measured = first <= last

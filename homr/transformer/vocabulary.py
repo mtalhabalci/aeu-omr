@@ -592,6 +592,10 @@ class EncodedSymbol:
         # pitch. homr.makam_key fills this in; MusicXML's <alter> reads it while
         # <accidental> keeps to the drawn symbol.
         self.sounding: str | None = None
+        # A clef's octave change, as MusicXML's <clef-octave-change>: -1 for the treble clef with a small 8 under
+        # it (a tenor's), +1 with the 8 over it. The vocabulary has no octave clefs, so the models read such a
+        # clef as clef_G2; homr.octave_clef finds the 8 on the page and the service sets this.
+        self.clef_octave = 0
         self._duration: SymbolDuration | None = None
 
     def is_control_symbol(self) -> bool:
@@ -623,6 +627,11 @@ class EncodedSymbol:
     def with_sounding(self, lift: str) -> "EncodedSymbol":
         result = copy.copy(self)
         result.sounding = lift
+        return result
+
+    def with_clef_octave(self, change: int) -> "EncodedSymbol":
+        result = copy.copy(self)
+        result.clef_octave = change
         return result
 
     def change_lift(self, lift: str) -> "EncodedSymbol":
