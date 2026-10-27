@@ -269,7 +269,8 @@ def multi_corrected() -> str:
     return app_score([("P1", "Ses", voice), ("P2", "Piyano", piano)], GROUPS)
 
 
-def multi_package(root: Path, left_hand_first: str = "bakilmadi") -> Path:
+def multi_package(root: Path, left_hand_first: str = "bakilmadi", cut_down: tuple[int, ...] | None = None) -> Path:
+    """cut_down: the staffs the service marked ustSesKirpildi (None: an answer from before the field existed)."""
     places = [(1, 0, 1, "v24"), (1, 1, 1, "temel"), (1, 1, 2, "temel"), (2, 0, 1, "v24"), (2, 1, 1, "temel"),
               (2, 1, 2, "temel")]
     staffs = []
@@ -278,6 +279,8 @@ def multi_package(root: Path, left_hand_first: str = "bakilmadi") -> Path:
                  "parti": part, "partiPortesi": staff, "okuyan": by}
         if by == "temel":
             entry["aeuDenetlenmeli"] = True
+        if cut_down is not None:
+            entry["ustSesKirpildi"] = number in cut_down
         staffs.append(entry)
     states = [("bakilmadi", []), ("duzeltildi", ["perde"]), (left_hand_first, []), ("duzeltildi", ["perde"]),
               ("onaylandi", []), ("onaylandi", [])]
@@ -513,6 +516,15 @@ class MultiPart(unittest.TestCase):
         self.assertEqual(reasons(staffs[3]), {"aeu-denetlenmedi"})
         # a staff nobody looked at is not taken masked either
         self.assertEqual(reasons(staffs[1]), {"hic-bakilmamis"})
+
+    def test_staff_cut_down_to_its_top_line_is_left_out(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            [package] = load_packages(str(multi_package(Path(tmp), cut_down=(5,))))
+            staffs = by_staff(process_package(package, Options()))
+        self.assertEqual(reasons(staffs[5]), {"ust-ses-kirpildi"})
+        self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4, 6])
+        # the service said which staffs it cut down: no guessing warning on the others
+        self.assertFalse(any("temel model" in " ".join(staffs[n].warnings) for n in (2, 6)))
 
     def test_checked_base_model_staff_is_taken(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

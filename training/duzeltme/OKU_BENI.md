@@ -38,14 +38,17 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    sayılırsa model kendi hatasını öğrenir.
 2. **Temel modelin okuduğu porte** (`aeuDenetlenmeli: true`): AEU koma arızalarını tanımaz, düz diyez/bemol
    yazmış olabilir. Bütün ölçüleri bakılmadıkça alınmaz, `--olcu-maskele` ile de (`aeu-denetlenmedi`).
-3. **`porte: null` kayıtlar** (servis porte bilgisi yazmamış) atlanır; sayısı raporda `portesizKayit`.
-4. **Gidiş-dönüş tutmalı** (aşağıda): tutmayan porte `gidis-donus` ile atlanır.
-5. Ayrıca: portenin resmi (`orijinal.*`) pakette olmalı ve sayfa boyutu servisin okuduğuyla aynı olmalı
+3. **Üst sese indirilmiş porte** (`ustSesKirpildi: true`): servis portedeki akoru ya da ikinci sesi kırpıp yalnız
+   üst sesi yazmış (`OMR_COKSES_B=0`); düzeltme sayfadaki bütün sesleri taşıyamaz, porte alınmaz
+   (`ust-ses-kirpildi`). Alanı olmayan eski yanıtlarda temel modelin okuduğu porteye yalnız uyarı yazılır.
+4. **`porte: null` kayıtlar** (servis porte bilgisi yazmamış) atlanır; sayısı raporda `portesizKayit`.
+5. **Gidiş-dönüş tutmalı** (aşağıda): tutmayan porte `gidis-donus` ile atlanır.
+6. Ayrıca: portenin resmi (`orijinal.*`) pakette olmalı ve sayfa boyutu servisin okuduğuyla aynı olmalı
    (`resim-yok`), servis kutusu olmalı (`kutu-yok`), ölçüler portelere açıkça dağılmalı (`olcu-belirsiz`:
    porte sınırına eklenen ölçü, iki portede görünen ölçü; `bolunmus-olcu`: satır sonunda bölünen ölçünün kesimi
    okumadan bulunamadı), boş ölçü olmamalı (`bos-olcu`), düzeltme ya da okuma akor/ikinci ses taşımamalı
    (`akor-ikinci-ses`: uygulama yalnız ilk sesi tutar).
-6. Aynı yüklenen dosyanın (manifest'teki SHA-256) birden çok düzeltmesi verildiyse (sonraki dışa aktarım,
+7. Aynı yüklenen dosyanın (manifest'teki SHA-256) birden çok düzeltmesi verildiyse (sonraki dışa aktarım,
    kullanıcının sonradan kaydettiği sürümü yeni bir `anonimKimlik` ile getirir) yalnız en yenisi (`tarih`, `surum`)
    alınır; ötekiler `yinelenen`.
 
