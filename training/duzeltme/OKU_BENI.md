@@ -12,7 +12,7 @@ düzende.
     C:\projects\yl\venv\Scripts\python.exe -m training.duzeltme.paket_oku PAKET [PAKET ...] --cikti datasets\duzeltme
 
 `PAKET`: uygulamanın verdiği zip (tek düzeltme ya da `index.json`'lu toplu paket) ya da açılmış klasörü.
-Seçenekler: `--ad train` (alt klasör ve dizin adı), `--olcu-maskele`, `--yalniz-not` (aşağıda).
+Seçenekler: `--ad train` (alt klasör ve dizin adı), `--olcu-maskele`, `--yalniz-not`, `--onay-yeter` (aşağıda).
 Model çalıştırmaz; GPU gerekmez.
 
 Çıktı (`--cikti` klasörü):
@@ -23,7 +23,9 @@ Model çalıştırmaz; GPU gerekmez.
 - `rapor.json`: paket paket, porte porte ne alındı, ne alınmadı ve neden, hangi ölçüler maskelendi, gidiş-dönüş
   sonucu. Porte başına: `olcular` ve `durumlar` servisin ölçü numaralarıyla, `maskelenenOlcular` düzeltilmiş
   notanın numaralarıyla, `nedenler` (`{neden, ayrinti}`), `gidisDonus` (`tamam` ya da fark), `uyarilar`, `ornek`
-  (yazılan dosyanın adı). `ozet.nedenler` neden kodlarının sayısıdır.
+  (yazılan dosyanın adı). Paket başına ayrıca `anonimYukleme` ve `yaziciVarsayilanlari`: uygulamanın yazıcısının
+  kendiliğinden koyduğu, etikete sayfanınki diye alınmayan şeyler (aşağıda "Etiket nasıl yazılır").
+  `ozet.nedenler` neden kodlarının sayısıdır.
 
 Biçimi tanınmayan paket (`bicim` başka bir şeyse, ör. `/2`) okunmaz: ileti ekrana ve `reddedilenPaketler`'e
 yazılır, öteki paketler yine okunur, çıkış kodu 2 olur.
@@ -38,6 +40,12 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    sayılırsa model kendi hatasını öğrenir.
 2. **Temel modelin okuduğu porte** (`aeuDenetlenmeli: true`): AEU koma arızalarını tanımaz, düz diyez/bemol
    yazmış olabilir. Bütün ölçüleri bakılmadıkça alınmaz, `--olcu-maskele` ile de (`aeu-denetlenmedi`).
+   **Yalnız onayla da alınmaz** (`aeu-yalniz-onay`): ekranda ölçü onayı ölçü başınadır ve bütün partileri kapsar;
+   onaylayan kullanıcı bu partiye bakmış mıdır, belli değil (Talha karar verene kadar temkinli kural). Böyle bir
+   porte ancak üzerinde notaya dokunan bir düzeltme varsa alınır (`duzeltildi` ve `turler`'inde `perde`, `ariza`,
+   `sure`, `nota-fazla`, `nota-eksik`, `bag` ya da `susleme`); yapısal düzeltme (tekrar, donanım, ölçü işareti,
+   ölçü çizgisi) bütün partilere birden yapıldığı için sayılmaz. `--onay-yeter` bu kuralı kapatır: onay her
+   partinin denetimi sayılır.
 3. **Üst sese indirilmiş porte** (`ustSesKirpildi: true`): servis portedeki akoru ya da ikinci sesi kırpıp yalnız
    üst sesi yazmış (`OMR_COKSES_B=0`); düzeltme sayfadaki bütün sesleri taşıyamaz, porte alınmaz
    (`ust-ses-kirpildi`). Alanı olmayan eski yanıtlarda temel modelin okuduğu porteye yalnız uyarı yazılır.
@@ -48,9 +56,18 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    porte sınırına eklenen ölçü, iki portede görünen ölçü; `bolunmus-olcu`: satır sonunda bölünen ölçünün kesimi
    okumadan bulunamadı), boş ölçü olmamalı (`bos-olcu`), düzeltme ya da okuma akor/ikinci ses taşımamalı
    (`akor-ikinci-ses`: uygulama yalnız ilk sesi tutar).
-7. Aynı yüklenen dosyanın (manifest'teki SHA-256) birden çok düzeltmesi verildiyse (sonraki dışa aktarım,
-   kullanıcının sonradan kaydettiği sürümü yeni bir `anonimKimlik` ile getirir) yalnız en yenisi (`tarih`, `surum`)
-   alınır; ötekiler `yinelenen`.
+   **Eklenen ölçüler** (`eklenenOlcular`): çok partili pakette her partinin kendi kaydı vardır (`porte`, `parti`,
+   `partiPortesi`); her parti yalnız kendininkini alır. Uygulama `porte`'yi kuralla verir (eklenen ölçüden önceki
+   model ölçüsünün portesi, yoksa sonrakinin): porte ortasına eklenen ölçü o portededir, ama bir portenin son
+   ölçüsünden sonra eklenen ölçü sayfada bir sonraki satırın başında da olabilir; bu yüzden sınırdaki eklemede
+   iki porte de `olcu-belirsiz` ile atlanır (`porte` olsun olmasın). `porte` önceki ölçünün portesiyle tutmazsa da
+   `olcu-belirsiz`.
+7. **Aynı yüklemenin birden çok düzeltmesi** verildiyse (sonraki dışa aktarım, kullanıcının sonradan kaydettiği
+   sürümü yeni bir `anonimKimlik` ile getirir) yalnız en yenisi alınır; ötekiler `yinelenen`. Yükleme manifest'teki
+   `anonimYukleme`'den bilinir (yükleme kimliğinin HMAC'i, bir yüklemenin bütün sürümlerinde aynı; en yeni: en büyük
+   `surum`). Alan yoksa (eski paket) orijinal dosyanın SHA-256'sına bakılır: o dosya tek bir `anonimYukleme`'de
+   varsa o yüklemeye katılır, yoksa aynı dosyanın düzeltmelerinden en yenisi (`tarih`, sonra `surum`) alınır.
+   Aynı dosyayı iki ayrı yükleme (iki kullanıcı) getirdiyse ikisi de alınır.
 
 **`--olcu-maskele`**: bakılmamış ölçüleri olan porte de alınır; o ölçülerin bütün alanları `?` ile yazılır
 (`?note_8 ?D5 ?_ ?_ upper`, `?barline . . . .`). Atkoşar kısmi etiketlerindeki maske budur
@@ -74,13 +91,22 @@ yalnız *basılı* arıza, bağlar `tieStart/tieStop`, süsleme `note_8G`, üçl
 jetonları.
 
 Uygulamanın MusicXML'i sayfanın çizdiğini tam taşımaz: arızaları perdeden yeniden hesaplar (hatırlatma arızası
-düşer), ölçü çizgisi biçimi yoktur (son ölçüye hep ince-kalın çizgi koyar), bağ dışında yay ve artikülasyon yoktur,
-ilk ölçüye sayfada olmasa da ölçü işareti yazar. Bunları modelin aynı sayfadaki okuması (`model.musicxml`) söyler
-ve **doğrulanmamış (`?`)** yazılır, çünkü kullanıcı bunları ekranda görüp onaylayamaz:
+düşer), ölçü çizgisi biçimi yoktur, bağ dışında yay ve artikülasyon yoktur. Bunlar uygulamada düzenlenemez; hepsi
+modelin aynı sayfadaki okumasından (`model.musicxml`) alınır ve **doğrulanmamış (`?`)** yazılır, çünkü kullanıcı
+bunları ekranda görüp onaylayamaz:
 - okumanın gördüğü hatırlatma arızası (`note_2 C5 ?N ?slurStop upper`), yay ve artikülasyonlar;
 - kesik/çift/kalın ölçü çizgisi (`?dashedbarline`);
-- portenin başında donanım ve ölçü işareti basılı mı: okuma görmediyse yazılmaz (kullanıcı ölçü işaretini
-  değiştirdiyse ya da eser içinde değişiyorsa yazılır).
+- portenin başında donanım basılı mı: okuma görmediyse yazılmaz.
+
+**Yazıcının varsayılanları** (uygulamada düzenlenemez, etiket bunları kullanıcının yazdığından ayırır; rapor
+`yaziciVarsayilanlari`'nda sayar):
+- **Son ölçü çizgisi**: uygulama son ölçüye hep ince-kalın çizgi koyar. Okumanın son ölçüsünde ince-kalın çizgi
+  yoksa bu yazıcının varsayılanıdır; etikete okumanın çizgisi yazılır (düz `barline`, okuma kalın çift çizgi
+  gördüyse `?bolddoublebarline`). Kullanıcı son ölçüleri birleştirdi ya da böldüyse de okumanın son çizgisi alınır.
+- **1. ölçünün ölçü işareti**: uygulama ilk ölçüye her zaman ölçü işareti yazar. Okumanın 1. ölçüsünde `<time>`
+  yoksa ve `islemler.json`'da 1. ölçüye bir `olcu-isareti` işlemi yoksa (`{"tur": "olcu-isareti", "olcu": 1,
+  "once": "8/8", "sonra": "4/4"}`) bu varsayılandır, etikete yazılmaz. Böyle bir işlem varsa ölçü işareti
+  kullanıcınındır ve yazılır. Eser içindeki ölçü işareti değişimi her zaman yazılır.
 
 Notalar okumayla kimlikleriyle (`<note id>`, uygulama okumadaki kimliği korur) eşlenir; kullanıcının değiştirdiği
 nota düzeltmeden gelir.
@@ -106,10 +132,19 @@ half`).
 kurulan paketlerde bütün porteler gidiş-dönüşü geçti; hiç düzeltilmemiş (yalnız onaylanmış) pakette jetonlar
 okumanın jetonlarıyla aynı çıktı, yalnız uygulamanın düşürdüğü iki hatırlatma arızası `?` ile.
 
+Gerçek servis yanıtından (v24-cokses-oktav) kurulan `ses-piyano` örneği (ses + iki porteli piyano, tek sistem,
+`orijinal.png` ile) baştan sona okundu: üç porte de gidiş-dönüşü geçti; ses (porte 1) ve sol el (porte 3, ayrıca
+`aeu-denetlenmedi`) bakılmamış 1. ölçü yüzünden alınmadı, sağ el (porte 2) alındı. Kesimler gözle denetlendi:
+porte tuvalin ortasında, payları komşu porteye kadar; sol elin 2. ölçüsündeki donanım değişimi etikette
+`keyAccidental B2 flat5` olarak ölçü çizgisinden sonra. Örnekteki sağ el düzeltmesi yapaydır (sayfadaki do, si
+yapılmış): örnek eğitime girmemeli.
+
 ## Bilinen sınırlar
 
-- Temel modelin okuduğu portelerde servis (çok ses kapalıyken) akoru/ikinci sesi üst sese indirir; paket bunu
-  söylemez. Bu porteler alınırsa etiket o sesleri taşımaz; raporda uyarı olarak yazılır.
+- `ustSesKirpildi` alanından önceki servis yanıtlarında hangi portenin üst sese indirildiği bilinmez; temel
+  modelin okuduğu böyle bir porte alınırsa etiket akoru/ikinci sesi taşımayabilir (raporda uyarı).
+- `1. ölçünün ölçü işareti` kuralı `islemler.json`'daki ölçü numarasına bakar (işlem anındaki numara); kullanıcı
+  ölçü işaretini koyduktan sonra başa ölçü eklediyse işlem 1. ölçüde görünmez.
 - Donanım işaretlerinin porte üzerindeki yeri standart kabul edilir (okumada `<key-step>` oktavsızdır).
 - Okuma bir portenin başında donanım görmediyse etikete donanım yazılmaz; model gözden kaçırdıysa etiket de
   kaçırır (raporda uyarı).
