@@ -4,7 +4,9 @@ the title-block reader (ocr_modelleri/, from this machine's RapidOCR; the Docker
 
     python servis/docker/hazirla.py [out]        out defaults to C:\\projects\\yl\\nota-okuma-imaj
 
-The folder is meant to be copied to the server as it is and built there (docker build -t nota-okuma:v24 .).
+The weights are taken from this checkout, or, for one that has none (a git worktree), from the checkout named by
+OMR_AGIRLIK_KOKU. The folder is meant to be copied to the server as it is and built there
+(docker build -t nota-okuma:v24 .).
 At the end it lists which of its files carry the upstream project's name, which the app's repository must not.
 """
 import os
@@ -17,6 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 OUT = sys.argv[1] if len(sys.argv) > 1 else r"C:\projects\yl\nota-okuma-imaj"
 NAME = "ho" + "mr"  # spelled so that this file does not list itself
+# where the weights are when this checkout has none (git holds no weights)
+WEIGHTS_ROOT = os.environ.get("OMR_AGIRLIK_KOKU", ROOT)
 
 # Python packages copied whole (code only), and the data files the service opens
 PACKAGES = [NAME, "servis", os.path.join("training", "architecture"), os.path.join("training", "transformer")]
@@ -31,6 +35,10 @@ DATA = [
     # v24, the reader the app uses (the thesis keeps v20)
     os.path.join("training", "architecture", "transformer",
                  "pytorch_model_1-819bee2ae062dff09fd97af4dfae98dd1709ceb3.pth"),
+    # the model v24 was fine-tuned from (run 331): it reads the staffs of systems of several staffs, for chords,
+    # second voices and the clefs other than the treble clef
+    os.path.join("training", "architecture", "transformer",
+                 "pytorch_model_331-e10346542968cc71fbcce0c0696f3ac963f11ae1.pth"),
     # the tempo readers that vote, and the one for ranges
     *(os.path.join("training", "architecture", "tempo", f"tempo_okuyucu_{k}.pt") for k in ("1", "2", "3", "aralik")),
     # the makam, form and usul names the title-block reader looks for
@@ -44,6 +52,8 @@ SKIP_DIRS = {"__pycache__", "ornekler"}
 
 def copy(rel: str) -> int:
     src, dst = os.path.join(ROOT, rel), os.path.join(OUT, "kod", rel)
+    if not os.path.exists(src):
+        src = os.path.join(WEIGHTS_ROOT, rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(src, dst)
     return os.path.getsize(dst)

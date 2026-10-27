@@ -8,7 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     OMP_NUM_THREADS=4 \
     MKL_NUM_THREADS=4 \
-    OMR_PORT=8765
+    OMR_PORT=8765 \
+    OMR_COKSES_B=0
+
+# kod/ holds both models: v24 (makam) and the base model it was fine-tuned from (run 331), which reads the staffs
+# of systems of several staffs; OMR_COKSES_B=1 also writes chords and second voices (see OKU_BENI.md)
 
 # libgl1/libglib2.0: the non-headless OpenCV that the OCR dependency pulls in links them
 RUN apt-get update \
@@ -37,8 +41,8 @@ RUN useradd --create-home --uid 10001 okuyucu && chown -R okuyucu /app
 USER okuyucu
 
 EXPOSE 8765
-# the model loads at start-up (tens of seconds on a CPU); /v1/saglik answers once it is in memory
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+# the models load at start-up (tens of seconds on a CPU); /v1/saglik answers once they are in memory
+HEALTHCHECK --interval=30s --timeout=10s --start-period=150s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/v1/saglik', timeout=8)"
 # one worker: jobs live in that process's memory and the model reads one page at a time
 CMD ["sh", "-c", "exec uvicorn servis.nota_servisi:app --host 0.0.0.0 --port ${OMR_PORT} --workers 1"]

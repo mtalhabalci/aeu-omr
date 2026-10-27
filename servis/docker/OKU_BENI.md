@@ -1,15 +1,41 @@
 # Nota okuma servisi: işlemcide çalışan Docker imajı
 
-Bu klasör, nota okuma servisinin (model v24 + çözümleme kuralları) ekran kartı olmayan bir sunucuda çalışan Docker
-imajını kurmak için gereken her şeyi taşır: `Dockerfile`, sürümleri sabitlenmiş `requirements-cpu.txt` ve `kod/`
-(servisin Python kodu ile model ağırlıkları). Ağırlıklar imajın içine girer; model sürümü imaj etiketiyle birlikte
-değişir.
+Bu klasör, nota okuma servisinin (model v24 + çözümleme kuralları, çok sesli porteler için temel model) ekran
+kartı olmayan bir sunucuda çalışan Docker imajını kurmak için gereken her şeyi taşır: `Dockerfile`, sürümleri
+sabitlenmiş `requirements-cpu.txt` ve `kod/` (servisin Python kodu ile model ağırlıkları). Ağırlıklar imajın içine
+girer; model sürümü imaj etiketiyle birlikte değişir.
+
+`kod/` klasörünü `python servis/docker/hazirla.py [hedef]` kurar. Ağırlıklar git'te olmadığı için çalıştığı
+klasörden alınır; ağırlığı olmayan bir çalışma kopyasında (git worktree) `OMR_AGIRLIK_KOKU` ağırlıkların durduğu
+klasörü gösterir (ağırlıkları taşıyan ana çalışma kopyası).
 
 ## Kurulum
 
     docker build -t nota-okuma:v24 .
 
-İmaj 1,3 GB tutar (ağırlıklar 0,38 GB). İlk derleme paket indirmesiyle birkaç dakika sürer.
+İmajın ~1,6 GB tutması beklenir; bu sürüm henüz kurulup ölçülmedi. Ağırlıklar 0,71 GB: v24 0,30 GB, temel model
+0,30 GB, geri kalanı porte bulucu, tempo ve OCR modelleri.
+İlk derleme paket indirmesiyle birkaç dakika sürer.
+
+## Çok seslilik
+
+İmaj iki okuma modeli taşır:
+
+- **v24** (`pytorch_model_1-819bee2…pth`): makam notası, AEU arızaları.
+- **Temel model** (`pytorch_model_331-e103465…pth`): v24'ün ince ayara başladığı model. Akoru, ikinci sesi, fa ve do
+  anahtarını okur.
+
+Birden çok porteli bir sistemde her porteyi önce temel model okur. Akor, ikinci porte ya da sol anahtarı dışında bir
+anahtar görürse onun okuması kalır, görmezse porteyi v24 okur. Tek porteli makam sayfası eskisi gibi yalnız v24 ile
+okunur ve sonucu değişmez. Akolad tek parça (iki porte), köşeli parantez parça grubu olur. Yanıt biçimi ve sınav
+sonuçları: `servis/OKU_BENI.md`, "Çok seslilik".
+
+- `OMR_COKSES_B=0` (varsayılan): her porte tek çizgi (üst ses) olarak yazılır.
+- `OMR_COKSES_B=1`: akorlar ve ikinci sesler de yazılır. Bu durumda tek porteli sayfayı da iki model okur, süre
+  ~%55 uzar.
+- Temel modelin dosyası yoksa servis yine açılır, bütün porteleri v24 okur.
+- Bellek: ikinci model boşta ~370 MB, tepede ~480 MB ekler. Masaüstünde tepe 2,0 GB'tan 2,5 GB'a çıktı; 4 GB
+  konteyner sınırı yine yeter.
 
 ## Compose
 
@@ -59,6 +85,8 @@ adresinden indirilir (sağlama toplamıyla). Çalışan konteyner model indirmez
 | `OMR_MODEL_SURUM` | `v24+kurallar-2026-10-16` | yanıttaki `modelVersion` |
 | `OMR_YAZILIM` | `Musiki Akademisi OMR;AEU-OMR` | MusicXML `<software>`; `;` ile ayrılan her ad ayrı bir `<software>` satırı olur |
 | `OMR_PORT` | `8765` | |
+| `OMR_COKSES_B` | `0` | `1`: akor ve ikinci ses yazılır, tek porteli sistemler de iki modelle okunur |
+| `OMR_TEMEL_MODEL` | `kod/training/architecture/transformer/pytorch_model_331-…pth` | temel modelin ağırlığı |
 | `OMP_NUM_THREADS`, `MKL_NUM_THREADS` | `4` | modelin kullandığı iş parçacığı; `cpus` sınırıyla aynı tutun |
 
 ## Eşzamanlılık ve zaman aşımı
