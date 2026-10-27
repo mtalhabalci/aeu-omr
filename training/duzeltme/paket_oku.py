@@ -274,10 +274,13 @@ def check_manifest(package: Package) -> dict:
 
 
 def reviewed(record: dict, options: Options, checks: Checks | None = None) -> bool:
-    """Whether the user looked at this measure of this staff."""
+    """Whether the user looked at this measure of this staff. A record's onaylandi (newer packages) says the user
+    approved it whatever its durum: a structural edit made the measure duzeltildi, the approval is still the user's
+    look at this staff."""
     checks = checks or Checks()
-    if record.get("durum") == "onaylandi":
-        return checks.approval
+    if record.get("durum") == "onaylandi" or record.get("onaylandi") is True:
+        if checks.approval:
+            return True
     if record.get("durum") == "duzeltildi":
         notes = bool(NOTE_KINDS & set(record.get("turler") or []))
         return notes or (checks.structure and not options.notes_only)

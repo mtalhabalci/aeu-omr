@@ -596,6 +596,18 @@ class ApprovalOfEveryPart(unittest.TestCase):
         # --onay-yeter takes the approvals, not the structural edit of staff 5
         self.assertEqual([s["porte"] for s in report_enough["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 6])
 
+    def test_approval_kept_beside_a_structural_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folders = {}
+            for name, version in (("eski", None), ("yeni", "5e1c0d2")):
+                folders[name] = multi_package(Path(tmp) / name, app_version=version)
+                doc = json.loads((folders[name] / "olcular.json").read_text(encoding="utf-8"))
+                doc["olcular"][4].update({"durum": "duzeltildi", "turler": ["isaret"], "onaylandi": True})
+                (folders[name] / "olcular.json").write_text(json.dumps(doc), encoding="utf-8")
+            old, new = self.staffs_of(folders["eski"], Options()), self.staffs_of(folders["yeni"], Options())
+        self.assertTrue(new[5].accepted, new[5].reasons)  # a structural edit, and the user approved the measure
+        self.assertIn("yalniz-yapisal", reasons(old[5]))  # an approval does not count there anyway
+
     def test_single_part_approval_and_structural_edit_are_that_parts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             records = single_records(third_kinds=("isaret",))

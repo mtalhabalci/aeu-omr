@@ -50,7 +50,10 @@ alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her öl�
    sekmeden yapılan kayıtlar) uygulama bir ölçünün onayını ölçünün bütün portelerine, bütün partilere geçirmiştir.
    `uygulamaSurumu` yazan uygulamada onay yalnız kullanıcının seçtiği partiye geçer ve temel modelin okuduğu
    portenin her ölçüsü bakılmadan düzeltme bitirilemez: orada onay o portenin denetimidir. Tek partili pakette onay
-   da yapısal düzeltme de yalnız o partinindir. `--onay-yeter` eski çok partili paketlerde de onayı denetim sayar
+   da yapısal düzeltme de yalnız o partinindir. Yeni paketlerde her kaydın `onaylandi` alanı (true/false)
+   kullanıcının o portenin o ölçüsünü onaylayıp onaylamadığını `durum`'dan bağımsız söyler: yapısal düzeltme
+   ölçüyü `duzeltildi` yapsa da onay sayılır (onayın sayıldığı pakette). Alan yoksa (413e4b9 ve öncesi) onay
+   `duzeltildi` durumunda kaybolmuştur, temkinli kalınır. `--onay-yeter` eski çok partili paketlerde de onayı denetim sayar
    (yapısal kuralı değiştirmez). Raporda paket başına `uygulamaSurumu`, `onayButunPartilere`,
    `yapisalDenetimSayilmaz`.
    (Bu kurallar, Talha'nın kararı beklenirken konan `aeu-yalniz-onay`'ın yerini aldı: temel modelin okuduğu porte
