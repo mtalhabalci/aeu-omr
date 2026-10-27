@@ -36,8 +36,10 @@ RUN python -c "import glob, os, shutil, rapidocr; d = os.path.join(os.path.dirna
     && python -c "from rapidocr import RapidOCR; RapidOCR(params={'Global.log_level': 'warning'})" \
     && rm -rf /tmp/ocr_modelleri
 
-COPY kod/ /app/
-RUN useradd --create-home --uid 10001 okuyucu && chown -R okuyucu /app
+# the user is made before the code comes in, so that the code is copied as its own: a chown -R after the COPY
+# wrote the whole code layer (the weights, 679 MB) a second time
+RUN useradd --create-home --uid 10001 --user-group okuyucu && chown okuyucu:okuyucu /app
+COPY --chown=okuyucu:okuyucu kod/ /app/
 USER okuyucu
 
 EXPOSE 8765
