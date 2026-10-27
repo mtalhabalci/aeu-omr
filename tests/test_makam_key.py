@@ -1,6 +1,11 @@
 import unittest
 
-from homr.makam_key import commas_for_lift, lift_for_commas, resolve_sounding
+from homr.makam_key import (
+    commas_for_lift,
+    lift_for_commas,
+    resolve_sounding,
+    resolve_western_sounding,
+)
 from homr.transformer.vocabulary import EncodedSymbol
 
 
@@ -144,6 +149,35 @@ class TestMakamKey(unittest.TestCase):
         resolved = resolve_sounding(symbols)
         self.assertIsNone(resolved[1].sounding)
         self.assertIsNone(resolved[2].sounding)
+
+
+class TestWesternKey(unittest.TestCase):
+    def test_key_signature_flattens_unsigned_notes(self) -> None:
+        symbols = [EncodedSymbol("keySignature_-2"), note("note_4", "B3", "_"), note("note_4", "E5", "_"),
+                   note("note_4", "A4", "_")]
+        resolved = resolve_western_sounding(symbols)
+        self.assertEqual([s.sounding for s in resolved[1:]], ["b", "b", None])
+
+    def test_a_sign_holds_for_the_rest_of_the_measure_on_that_note(self) -> None:
+        symbols = [note("note_4", "F4", "#"), note("note_4", "F4", "_"), note("note_4", "F5", "_"), BARLINE,
+                   note("note_4", "F4", "_")]
+        resolved = resolve_western_sounding(symbols)
+        # the drawn sign is the note's own; the next F4 sounds it too, the other octave and the next measure not
+        self.assertEqual([s.sounding for s in resolved], [None, "#", None, None, None])
+
+    def test_natural_against_the_signature(self) -> None:
+        symbols = [EncodedSymbol("keySignature_1"), note("note_4", "F4", "N"), note("note_4", "F4", "_")]
+        resolved = resolve_western_sounding(symbols)
+        self.assertEqual(resolved[2].sounding, "N")
+
+    def test_tie_carries_over_the_barline(self) -> None:
+        symbols = [note("note_4", "C5", "#", "tieStart"), BARLINE, note("note_4", "C5", "_", "tieStop")]
+        resolved = resolve_western_sounding(symbols)
+        self.assertEqual(resolved[2].sounding, "#")
+
+    def test_makam_resolver_keeps_it(self) -> None:
+        symbols = resolve_western_sounding([EncodedSymbol("keySignature_-1"), note("note_4", "B4", "_")])
+        self.assertEqual(resolve_sounding(symbols)[1].sounding, "b")
 
 
 if __name__ == "__main__":

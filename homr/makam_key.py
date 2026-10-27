@@ -128,3 +128,55 @@ def resolve_sounding(symbols: list[EncodedSymbol]) -> list[EncodedSymbol]:
         previous = symbol.rhythm
         resolved.append(symbol)
     return resolved
+
+# Western signs as the base model reads them (it has no makam tokens): semitones, and the order of a key signature
+WESTERN_LIFTS = {"#": 1, "##": 2, "b": -1, "bb": -2, "N": 0}
+_WESTERN_NAMES = {value: lift for lift, value in WESTERN_LIFTS.items()}
+_SHARPS_IN_ORDER = "FCGDAEB"
+
+
+def resolve_western_sounding(symbols: list[EncodedSymbol]) -> list[EncodedSymbol]:
+    """The same for a reading in Western signs, as the base model writes it: a keySignature_N (N sharps, or -N
+    flats) and the plain sharp, flat and natural. A note without a sign of its own sounds what the signature or
+    an earlier sign on that note in the measure says, and the far half of a tie what the near half did.
+
+    resolve_sounding knows only the makam signature (keyAccidental) and leaves these notes alone, so without this
+    a B under one flat came out as B natural. Run it before resolve_sounding (the MusicXML writer runs that one),
+    which then keeps what this set."""
+    signature: dict[str, int] = {}
+    measure: dict[str, int] = {}
+    tied: dict[str, int] = {}
+    resolved = []
+    for symbol in symbols:
+        rhythm = symbol.rhythm
+        if rhythm.startswith("keySignature_"):
+            try:
+                fifths = int(rhythm.split("_", 1)[1])
+            except ValueError:
+                fifths = 0
+            steps = _SHARPS_IN_ORDER if fifths > 0 else _SHARPS_IN_ORDER[::-1]
+            signature = {step: 1 if fifths > 0 else -1 for step in steps[: abs(fifths)]}
+        elif _ends_measure(rhythm):
+            measure.clear()
+        elif (
+            rhythm.startswith("note")
+            and len(symbol.pitch) >= 2
+            and symbol.pitch[0] in "ABCDEFG"
+            and symbol.lift in (*WESTERN_LIFTS, empty)
+        ):
+            drawn = WESTERN_LIFTS.get(symbol.lift)
+            if drawn is None and "tieStop" in symbol.articulation and symbol.pitch in tied:
+                value = tied[symbol.pitch]
+            elif drawn is not None:
+                value = measure[symbol.pitch] = drawn
+            else:
+                value = measure.get(symbol.pitch, signature.get(symbol.pitch[0], 0))
+            if "tieStart" in symbol.articulation:
+                tied[symbol.pitch] = value
+            else:
+                tied.pop(symbol.pitch, None)
+            known = symbol.pitch[0] in signature or symbol.pitch in measure
+            if drawn is None and (value or known) and value in _WESTERN_NAMES:
+                symbol = symbol.with_sounding(_WESTERN_NAMES[value])
+        resolved.append(symbol)
+    return resolved
