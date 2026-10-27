@@ -20,13 +20,20 @@ Which staffs (see OKU_BENI.md):
   nobody looked at (bakilmadi) leaves the whole staff out. With --olcu-maskele such a staff is taken all the same,
   its unchecked measures written with every field unverified ("?"), which the training loss skips;
 - a staff the base model read (aeuDenetlenmeli: it does not know the AEU koma accidentals) only when every measure
-  on it was checked, also with --olcu-maskele;
+  on it was checked, also with --olcu-maskele, and a note on it was corrected: approving a measure covers every
+  part, and until it is settled that the user looked at this one approval alone does not do (aeu-yalniz-onay;
+  --onay-yeter turns this off);
 - --yalniz-not counts a corrected measure as checked only when the correction touched its notes (perde, arıza,
   süre, nota, bağ, süsleme); a structural edit (repeat, volta, key, meter, a measure added or taken out) is made for
   every part at once and says nothing about the notes of the parts the user did not look at;
 - records without a staff (porte: null: no staff boxes from the service) are skipped;
 - the staff's tokens must come back as the corrected score when written out again (etiket.round_trip);
-- of several corrections of one uploaded file only the newest is taken (read_packages).
+- of several corrections of one upload (anonimYukleme, else the original file's SHA-256) only the newest is taken
+  (read_packages).
+
+What the app's writer puts in by itself is not taken as the page's: the light-heavy barline after the last measure
+and a first-measure time signature the reading does not have and no olcu-isareti operation set (rapor.json
+yaziciVarsayilanlari).
 """
 
 from __future__ import annotations
@@ -70,6 +77,7 @@ from training.duzeltme.etiket import (
     round_trip,
     row_texts,
     staff_rows,
+    writer_defaults,
 )
 
 FORMAT = "musiki-akademisi-duzeltme/1"
@@ -90,6 +98,7 @@ class PackageError(Exception):
 class Options:
     mask_measures: bool = False  # --olcu-maskele
     notes_only: bool = False  # --yalniz-not
+    approval_enough: bool = False  # --onay-yeter
 
 
 @dataclass
@@ -161,18 +170,21 @@ class PackageResult:
     staffs: list[StaffResult] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     skipped_records: int = 0  # olcular.json records without a staff (porte: null)
+    defaults: list[str] = field(default_factory=list)  # what the app's writer put in by itself (not the page's)
 
     def report(self) -> dict:
         m = self.manifest
         return {
             "klasor": self.name,
             "anonimKimlik": m.get("anonimKimlik"),
+            "anonimYukleme": m.get("anonimYukleme"),
             "surum": m.get("surum"),
             "modelVersion": m.get("modelVersion"),
             "tur": m.get("tur"),
             "cokParti": "cokParti" in m,
             "porteKaynagi": m.get("porteKaynagi"),
             "portesizKayit": self.skipped_records,
+            "yaziciVarsayilanlari": self.defaults,
             "uyarilar": self.warnings,
             "porteler": [s.report() for s in self.staffs],
         }
@@ -316,6 +328,24 @@ def _split(
     return first, second
 
 
+def inserted_for_line(items: list[dict], key: tuple[int, int], staffs: list[StaffResult]) -> list[dict]:
+    """The eklenenOlcular items of one line: a score of several parts has one item per part, named by its staff
+    (porte) or, when the app found none, by parti and partiPortesi; an item that names neither (a single part, an
+    older package) is every line's."""
+    portes = {staff.entry.get("porte") for staff in staffs}
+    found = []
+    for item in items:
+        if item.get("porte") is not None:
+            if item["porte"] in portes:
+                found.append(item)
+        elif "parti" in item or "partiPortesi" in item:
+            if (item.get("parti", 0), item.get("partiPortesi", 1)) == key:
+                found.append(item)
+        else:
+            found.append(item)
+    return found
+
+
 def plan_line(
     staffs: list[StaffResult],
     records: list[dict],
@@ -323,9 +353,11 @@ def plan_line(
     corrected: StaffLine,
     model: StaffLine | None,
     options: Options,
+    meter_set_first: bool = False,
 ) -> dict[int, Hints]:
     """Find the corrected measures of every staff of one line (one part's staff through the score) and which are
-    masked; mark the staffs that cannot be taken. Returns the hints of the reading by staff (index in staffs)."""
+    masked; mark the staffs that cannot be taken. Returns the hints of the reading by staff (index in staffs).
+    meter_set_first: islemler.json sets the first measure's time signature."""
     by_number: dict[int, list[int]] = defaultdict(list)
     for index, measure in enumerate(corrected.measures):
         by_number[measure.number].append(index)
@@ -381,6 +413,18 @@ def plan_line(
             at = [min(ranges, key=lambda t: ranges[t][0])] if ranges else []
         else:
             at = [s for s, (first, last) in ranges.items() if first <= before <= last]
+        if item.get("porte") is not None:
+            # The app names the staff of the model measure before the added one (else the one after it). That
+            # confirms the staff, but it is a rule, not what the page shows: a measure added after the last measure
+            # of a staff may as well open the next one, so that stays unclear below.
+            on = [s for s, staff in enumerate(staffs) if staff.entry.get("porte") == item["porte"]]
+            if not on or on[0] not in ranges:
+                continue
+            if at and on[0] not in at:
+                staffs[on[0]].reject("olcu-belirsiz", f"ölçü {before} ardından eklenen ölçünün portesi "
+                                                      f"(porte {item['porte']}) o ölçünün portesi değil")
+                continue
+            at = on
         if len(at) != 1:
             continue
         s = at[0]
@@ -455,6 +499,17 @@ def plan_line(
                 staff.reject("hic-bakilmamis", detail)
             elif options.mask_measures:
                 staff.masked = sorted({corrected.measures[p.measure].number for p in pieces if p.masked})
+        elif staff.base_model and not options.approval_enough:
+            # Until it is settled whether approving a measure vouches for every part: a staff the base model read
+            # is taken only when the user changed a note on it. A structural edit is made for every part at once
+            # and is no sign either that anybody looked at this one.
+            touched = [m for m in staff.model_measures if record_of[m].get("durum") == "duzeltildi"
+                       and NOTE_KINDS & set(record_of[m].get("turler") or [])]
+            touched += [i for i, item in inserted_at.items() if s in owners.get(i, set())
+                        and NOTE_KINDS & set(item.get("turler") or [])]
+            if not touched:
+                staff.reject("aeu-yalniz-onay", "temel modelin okuduğu portede notaya dokunan düzeltme yok, yalnız "
+                                                "ölçü onayı (bütün partileri kapsar); --onay-yeter ile alınır")
         staff.pieces = pieces
         for index in indices:
             m = corrected.measures[index]
@@ -477,7 +532,9 @@ def plan_line(
             staff.warnings.append("temel model okudu: sayfada akor ya da ikinci ses varsa servis yalnız üst sesi "
                                   "yazmış olabilir, etiket o sesleri taşımaz")
         # the reading's hints
-        hint = Hints(events=model_events, drawn=model is not None and not staff.base_model)
+        hint = Hints(events=model_events, drawn=model is not None and not staff.base_model,
+                     meter_set_first=meter_set_first, last_measure=len(corrected.measures) - 1,
+                     reading_end=model.measures[-1] if model and model.measures else None)
         for index in indices:
             behind = [m for m, found in of_model.items() if index in found]
             hint.edited[index] = {t for m in behind for t in record_of[m].get("turler") or []}
@@ -614,6 +671,10 @@ def process_package(package: Package, options: Options) -> PackageResult:
         model = []
         result.warnings.append(f"model.musicxml okunamadı ({error}); okumanın ipuçları kullanılmadı")
     records = measure_doc.get("olcular") or []
+    try:
+        operations = [op for op in package.load_json("islemler.json") if isinstance(op, dict)]
+    except (PackageError, json.JSONDecodeError, TypeError):
+        operations = []  # an older package without it: no operation is known
     result.skipped_records = sum(1 for r in records if r.get("porte") is None)
     entries = sorted(staff_doc.get("porteler") or [], key=lambda p: p.get("porte", 0))
     result.staffs = [StaffResult(entry, base_model=bool(entry.get("aeuDenetlenmeli"))) for entry in entries]
@@ -641,7 +702,13 @@ def process_package(package: Package, options: Options) -> PackageResult:
             line_records = records
         else:
             line_records = [r for r in records if (r.get("parti", 0), r.get("partiPortesi", 1)) == key]
-        hints = plan_line(staffs, line_records, measure_doc.get("eklenenOlcular") or [], line, model_line, options)
+        first = line.measures[0].number if line.measures else 1
+        meter_set_first = any(op.get("tur") == "olcu-isareti" and op.get("olcu") == first for op in operations)
+        line_inserted = inserted_for_line(measure_doc.get("eklenenOlcular") or [], key, staffs)
+        hints = plan_line(staffs, line_records, line_inserted, line, model_line, options,
+                          meter_set_first)
+        where = f"parti {key[0]}, porte {key[1]}: " if several else ""
+        result.defaults += [where + found for found in writer_defaults(line, model_line, meter_set_first)]
         for s, hint in hints.items():
             all_hints[id(staffs[s])] = hint
 
@@ -738,7 +805,8 @@ def write_dataset(results: list[PackageResult], out: str, subset: str, options: 
     staffs = [s for p in results for s in p.staffs]
     report = {
         "bicim": FORMAT,
-        "ayarlar": {"olcuMaskele": options.mask_measures, "yalnizNot": options.notes_only},
+        "ayarlar": {"olcuMaskele": options.mask_measures, "yalnizNot": options.notes_only,
+                    "onayYeter": options.approval_enough},
         "ozet": {
             "paket": len(results),
             "porte": len(staffs),
@@ -780,20 +848,40 @@ def read_packages(paths: list[str], options: Options, refused: list[str] | None 
     def sha(result: PackageResult) -> str | None:
         return (result.manifest.get("orijinal") or {}).get("sha256")
 
-    def age(result: PackageResult) -> tuple:
-        return (str(result.manifest.get("tarih") or ""), int(result.manifest.get("surum") or 0))
+    # anonimYukleme names the upload, the same in every correction version of it; a package from before the field
+    # joins the upload whose file has its SHA-256, when only one upload has that file
+    uploads_of: dict[str, set[str]] = defaultdict(set)
+    for result in results:
+        if result.manifest.get("anonimYukleme") and sha(result):
+            uploads_of[sha(result) or ""].add(result.manifest["anonimYukleme"])
+
+    def upload(result: PackageResult) -> str | None:
+        if result.manifest.get("anonimYukleme"):
+            return "yukleme:" + result.manifest["anonimYukleme"]
+        known = uploads_of.get(sha(result) or "", set())
+        if len(known) == 1:
+            return "yukleme:" + next(iter(known))
+        file = sha(result)
+        return "sha256:" + file if file else None
+
+    def age(result: PackageResult, key: str) -> tuple:
+        # the versions of one upload are numbered; between uploads of one file only the day tells
+        version = int(result.manifest.get("surum") or 0)
+        day = str(result.manifest.get("tarih") or "")
+        return (version, day) if key.startswith("yukleme:") else (day, version)
 
     newest: dict[str, PackageResult] = {}
     for result in results:
-        key = sha(result)
-        if key and (key not in newest or age(result) > age(newest[key])):
+        key = upload(result)
+        if key and (key not in newest or age(result, key) > age(newest[key], key)):
             newest[key] = result
     for result in results:
-        key = sha(result)
+        key = upload(result)
         if key and newest[key] is not result:
-            result.warnings.append(f"aynı dosyanın daha yeni düzeltmesi var: {newest[key].name}")
+            what = "yüklemenin" if key.startswith("yukleme:") else "dosyanın"
+            result.warnings.append(f"aynı {what} daha yeni düzeltmesi var: {newest[key].name}")
             for staff in result.staffs:
-                staff.reject("yinelenen", f"aynı dosyanın daha yeni düzeltmesi: {newest[key].name}")
+                staff.reject("yinelenen", f"aynı {what} daha yeni düzeltmesi: {newest[key].name}")
     return results
 
 
@@ -806,8 +894,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="bakılmamış ölçüleri maskeleyip portenin kalanını al (temel modelin portelerinde değil)")
     parser.add_argument("--yalniz-not", action="store_true",
                         help="düzeltilen ölçü yalnız notasına dokunulduysa denetlenmiş sayılır")
+    parser.add_argument("--onay-yeter", action="store_true",
+                        help="temel modelin okuduğu porte yalnız ölçü onayıyla da alınır (aeu-yalniz-onay kapanır)")
     args = parser.parse_args(argv)
-    options = Options(mask_measures=args.olcu_maskele, notes_only=args.yalniz_not)
+    options = Options(mask_measures=args.olcu_maskele, notes_only=args.yalniz_not,
+                      approval_enough=args.onay_yeter)
     refused: list[str] = []
     results = read_packages(args.paketler, options, refused)
     for message in refused:

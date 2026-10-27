@@ -27,6 +27,8 @@ from training.duzeltme.etiket import (
 from training.duzeltme.paket_oku import (
     Options,
     PackageError,
+    StaffResult,
+    inserted_for_line,
     load_packages,
     main,
     process_package,
@@ -107,7 +109,8 @@ def page_png(boxes: list[list[int]], width: int = 1920, height: int = 1300) -> b
 
 
 def write_package(root: Path, files: dict[str, object], several: dict | None = None, image: bytes | None = None,
-                  form: str = "musiki-akademisi-duzeltme/1", folder_name: str = FOLDER, version: int = 1) -> Path:
+                  form: str = "musiki-akademisi-duzeltme/1", folder_name: str = FOLDER, version: int = 1,
+                  upload: str | None = None) -> Path:
     folder = root / folder_name
     folder.mkdir(parents=True)
     for name, content in files.items():
@@ -123,9 +126,12 @@ def write_package(root: Path, files: dict[str, object], several: dict | None = N
                 "porteKaynagi": "servis", "ozet": {}, "dosyalar": sorted(files)}
     if several:
         manifest["cokParti"] = several
+    if upload:
+        manifest["anonimYukleme"] = upload
     (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (folder / "tempolar.json").write_text('{"kaynak": "musicxml", "kayitlar": []}', encoding="utf-8")
-    (folder / "islemler.json").write_text("[]", encoding="utf-8")
+    if "islemler.json" not in files:
+        (folder / "islemler.json").write_text("[]", encoding="utf-8")
     return folder
 
 
@@ -188,23 +194,28 @@ def single_records(fourth: str = "onaylandi", third_kinds: tuple = ("perde",)) -
     ], "eklenenOlcular": []}
 
 
-def single_package(root: Path, image: bool = True, folder_name: str = FOLDER, version: int = 1, **kwargs) -> Path:
-    corrected = single_corrected(kwargs.pop("second_c5_sharp_unsigned", False))
+def single_package(root: Path, image: bool = True, folder_name: str = FOLDER, version: int = 1,
+                   read: tuple[str, str] = (READ_1, READ_2), corrected: str | None = None, records: dict | None = None,
+                   operations: list | None = None, upload: str | None = None, page: bytes | None = None,
+                   **kwargs) -> Path:
+    corrected = corrected or single_corrected(kwargs.pop("second_c5_sharp_unsigned", False))
     staffs = [
         {"porte": 1, "sayfa": 1, "kutu": SINGLE_BOXES[0], "olcuBas": 1, "olcuSon": 2},
         {"porte": 2, "sayfa": 1, "kutu": SINGLE_BOXES[1], "olcuBas": 3, "olcuSon": 4},
         {"porte": 3, "sayfa": 1, "kutu": SINGLE_BOXES[2], "olcuBas": None, "olcuSon": None},
     ]
     files = {
-        "model.musicxml": model_xml(READ_1, READ_2, ""),
+        "model.musicxml": model_xml(*read, ""),
         "duzeltilmis.musicxml": corrected,
         "porteler.json": {"kaynak": "servis", "porteler": staffs,
                           "sayfaResimleri": [{"sayfa": 1, "genislik": 1920, "yukseklik": 1300, "dpi": None,
                                               "kaynak": "fotograf"}]},
-        "olcular.json": single_records(**kwargs),
+        "olcular.json": records or single_records(**kwargs),
     }
-    return write_package(root, files, image=page_png(SINGLE_BOXES) if image else None, folder_name=folder_name,
-                         version=version)
+    if operations is not None:
+        files["islemler.json"] = operations
+    image_bytes = (page or page_png(SINGLE_BOXES)) if image else None
+    return write_package(root, files, image=image_bytes, folder_name=folder_name, version=version, upload=upload)
 
 
 # --- a multi-part page: voice + piano, two systems; the piano read by the base model ------------------------------
@@ -488,7 +499,10 @@ class MultiPart(unittest.TestCase):
             staffs = by_staff(process_package(package, Options()))
         self.assertEqual(reasons(staffs[1]), {"bakilmadi"})  # the voice, system 1
         self.assertEqual(reasons(staffs[3]), {"bakilmadi", "aeu-denetlenmedi"})  # the left hand, system 1
-        self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4, 5, 6])
+        # the piano of system 2 was only approved, the base model read it: not taken on approval alone
+        self.assertEqual(reasons(staffs[5]), {"aeu-yalniz-onay"})
+        self.assertEqual(reasons(staffs[6]), {"aeu-yalniz-onay"})
+        self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4])
         self.assertEqual(row_texts(staffs[2].rows), [
             "clef_G2 _ _ _ upper",
             "timeSignature_2/4 . . . .",
@@ -520,7 +534,7 @@ class MultiPart(unittest.TestCase):
     def test_staff_cut_down_to_its_top_line_is_left_out(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             [package] = load_packages(str(multi_package(Path(tmp), cut_down=(5,))))
-            staffs = by_staff(process_package(package, Options()))
+            staffs = by_staff(process_package(package, Options(approval_enough=True)))
         self.assertEqual(reasons(staffs[5]), {"ust-ses-kirpildi"})
         self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4, 6])
         # the service said which staffs it cut down: no guessing warning on the others
@@ -529,10 +543,160 @@ class MultiPart(unittest.TestCase):
     def test_checked_base_model_staff_is_taken(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             [package] = load_packages(str(multi_package(Path(tmp), left_hand_first="onaylandi")))
-            staffs = by_staff(process_package(package, Options()))
+            staffs = by_staff(process_package(package, Options(approval_enough=True)))
         self.assertTrue(staffs[3].accepted, staffs[3].reasons)
         self.assertEqual(row_texts(staffs[3].rows), ["clef_F4 _ _ _ upper", "timeSignature_2/4 . . . .",
                                                      "note_2 A3 _ _ upper", "barline . . . ."])
+
+
+class ApprovalAlone(unittest.TestCase):
+    def test_base_model_staff_needs_a_note_correction_unless_approval_is_enough(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = multi_package(Path(tmp))
+            [package] = load_packages(str(folder))
+            cautious = by_staff(process_package(package, Options()))
+            enough = by_staff(process_package(package, Options(approval_enough=True)))
+            # a structural edit is made for every part: it is no sign that anybody looked at this staff
+            doc = json.loads((folder / "olcular.json").read_text(encoding="utf-8"))
+            doc["olcular"][4].update({"durum": "duzeltildi", "turler": ["isaret"]})
+            (folder / "olcular.json").write_text(json.dumps(doc), encoding="utf-8")
+            [package] = load_packages(str(folder))
+            structural = by_staff(process_package(package, Options()))
+            out = Path(tmp) / "veri"
+            self.assertEqual(main([str(folder), "--cikti", str(out), "--onay-yeter"]), 0)
+            report = json.loads((out / "rapor.json").read_text(encoding="utf-8"))
+        self.assertTrue(cautious[2].accepted)  # the right hand of system 1: a pitch corrected on it
+        self.assertEqual([n for n, s in cautious.items() if "aeu-yalniz-onay" in reasons(s)], [5, 6])
+        self.assertEqual([n for n, s in enough.items() if s.accepted], [2, 4, 5, 6])
+        self.assertEqual(reasons(structural[5]), {"aeu-yalniz-onay"})
+        self.assertTrue(report["ayarlar"]["onayYeter"])
+        self.assertEqual([s["porte"] for s in report["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 5, 6])
+
+
+class WriterDefaults(unittest.TestCase):
+    def test_final_barline_of_the_writer_gives_way_to_the_readings(self) -> None:
+        bold = READ_2.replace("note_1 A4 _ tieStop upper\nbarline", "note_1 A4 _ tieStop upper\nbolddoublebarline")
+        self.assertNotEqual(bold, READ_2)
+        with tempfile.TemporaryDirectory() as tmp:
+            [plain] = read_packages([str(single_package(Path(tmp) / "a"))], Options())
+            [heavy] = read_packages([str(single_package(Path(tmp) / "b", read=(READ_1, bold)))], Options())
+        self.assertEqual(plain.defaults, ["son ölçü çizgisi (ölçü 4, ince-kalın)"])
+        self.assertEqual(row_texts(by_staff(plain)[2].rows)[-1], "barline . . . .")
+        self.assertEqual(heavy.defaults, ["son ölçü çizgisi (ölçü 4, ince-kalın)"])
+        self.assertEqual(row_texts(by_staff(heavy)[2].rows)[-1], "?bolddoublebarline . . . .")
+
+    def test_last_measure_merged_by_the_user_still_closes_with_the_readings_barline(self) -> None:
+        bold = READ_2.replace("note_1 A4 _ tieStop upper\nbarline", "note_1 A4 _ tieStop upper\nbolddoublebarline")
+        corrected = single_corrected()
+        start, end = corrected.index('</measure><measure number="4">'), corrected.index('<barline location="right">')
+        corrected = corrected[:start] + corrected[start + len('</measure><measure number="4">'):end] \
+            + corrected[end:]
+        records = single_records()
+        records["olcular"][2].update({"turler": ["olcu-cizgisi"], "duzeltilmis": [3]})
+        records["olcular"][3].update({"durum": "duzeltildi", "turler": ["olcu-cizgisi"], "duzeltilmis": [3]})
+        with tempfile.TemporaryDirectory() as tmp:
+            [result] = read_packages([str(single_package(Path(tmp), read=(READ_1, bold), corrected=corrected,
+                                                         records=records))], Options())
+        staff = by_staff(result)[2]
+        self.assertTrue(staff.accepted, staff.reasons)
+        self.assertEqual(row_texts(staff.rows)[-3:], ["note_2 A4 _ tieStart upper", "note_1 A4 _ tieStop upper",
+                                                      "?bolddoublebarline . . . ."])
+
+    def test_first_time_signature_of_the_writer_is_left_out_unless_the_user_set_it(self) -> None:
+        unmetered = READ_1.replace("timeSignature_4/4 . . . .\n", "")
+        self.assertNotEqual(unmetered, READ_1)
+        meter = [{"tur": "olcu-isareti", "olcu": 1, "once": "4/4", "sonra": "4/4"}]
+        elsewhere = [{"tur": "olcu-isareti", "olcu": 3, "once": "4/4", "sonra": "4/4"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            [default] = read_packages([str(single_package(Path(tmp) / "a", read=(unmetered, READ_2)))], Options())
+            [user] = read_packages([str(single_package(Path(tmp) / "b", read=(unmetered, READ_2),
+                                                       operations=meter))], Options())
+            [other] = read_packages([str(single_package(Path(tmp) / "c", read=(unmetered, READ_2),
+                                                        operations=elsewhere))], Options())
+        self.assertIn("1. ölçünün ölçü işareti (4/4)", default.defaults)
+        self.assertNotIn("timeSignature_4/4 . . . .", row_texts(by_staff(default)[1].rows))
+        self.assertEqual(by_staff(default)[1].round_trip, "tamam")
+        self.assertNotIn("1. ölçünün ölçü işareti (4/4)", user.defaults)
+        self.assertEqual(row_texts(by_staff(user)[1].rows)[2], "timeSignature_4/4 . . . .")
+        self.assertIn("1. ölçünün ölçü işareti (4/4)", other.defaults)  # an operation on another measure
+
+
+class Uploads(unittest.TestCase):
+    def test_one_upload_by_its_stable_id_else_by_its_file(self) -> None:
+        other_page = page_png([*SINGLE_BOXES, [100, 1150, 1800, 1230]])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # two versions of one upload: the file is the same upload's, whatever its bytes
+            single_package(root / "a", folder_name="duzeltme-v1", version=1, upload="Y1")
+            single_package(root / "a", folder_name="duzeltme-v2", version=2, upload="Y1", page=other_page)
+            # one file uploaded twice: two uploads, both taken
+            single_package(root / "b", folder_name="duzeltme-x", upload="Y2")
+            single_package(root / "b", folder_name="duzeltme-z", upload="Y3")
+            # an export from before the field joins the upload that has its file
+            single_package(root / "c", folder_name="duzeltme-eski", version=1)
+            single_package(root / "c", folder_name="duzeltme-yeni", version=2, upload="Y4")
+            versions = {r.name: r for r in read_packages([str(root / "a")], Options())}
+            twice = {r.name: r for r in read_packages([str(root / "b")], Options())}
+            mixed = {r.name: r for r in read_packages([str(root / "c")], Options())}
+        self.assertIn("yinelenen", reasons(versions["duzeltme-v1"].staffs[0]))
+        self.assertTrue(versions["duzeltme-v2"].staffs[0].accepted)
+        self.assertTrue(twice["duzeltme-x"].staffs[0].accepted and twice["duzeltme-z"].staffs[0].accepted)
+        self.assertIn("yinelenen", reasons(mixed["duzeltme-eski"].staffs[0]))
+        self.assertTrue(mixed["duzeltme-yeni"].staffs[0].accepted)
+
+
+def inserted_package(root: Path, after: int, porte: int | None) -> Path:
+    """The user added a measure after model measure `after`; the app's record names the staff when porte (the app
+    gives the staff of the measure before it)."""
+    corrected = single_corrected()
+    for number in (4, 3, 2):
+        if number > after:
+            corrected = corrected.replace(f'<measure number="{number}">', f'<measure number="{number + 1}">')
+    at = corrected.index(f'<measure number="{after + 2}">')
+    corrected = (corrected[:at] + f'<measure number="{after + 1}">' + app_note("e1", "G4", "whole") + "</measure>"
+                 + corrected[at:])
+    records = single_records()
+    for record in records["olcular"]:
+        if record["olcu"] == after:
+            record.update({"durum": "duzeltildi", "turler": [*record["turler"], "olcu-cizgisi"]})
+        elif record["olcu"] > after:
+            record["duzeltilmis"] = [record["olcu"] + 1]
+    item = {"duzeltilmis": [after + 1], "oncekiModelOlcusu": after, "turler": ["nota-eksik", "olcu-cizgisi"]}
+    if porte is not None:
+        item.update({"porte": porte, "parti": 0, "partiPortesi": 1})
+    records["eklenenOlcular"] = [item]
+    return single_package(root, corrected=corrected, records=records)
+
+
+class Inserted(unittest.TestCase):
+    def test_measure_added_inside_a_staff_is_on_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            [result] = read_packages([str(inserted_package(Path(tmp), after=1, porte=1))], Options())
+        staffs = by_staff(result)
+        self.assertTrue(staffs[1].accepted and staffs[2].accepted, (staffs[1].reasons, staffs[2].reasons))
+        self.assertEqual(row_texts(staffs[1].rows)[7:11], ["barline . . . .", "note_1 G4 _ _ upper",
+                                                           "barline . . . .", "note_2 D5 _ ?slurStart upper"])
+        self.assertEqual(staffs[1].round_trip, "tamam")
+
+    def test_measure_added_at_a_line_end_stays_unclear_with_or_without_the_apps_staff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            # the app gives the staff of the measure before: a rule, the page may have it at the next line's head
+            [named] = read_packages([str(inserted_package(Path(tmp) / "a", after=2, porte=1))], Options())
+            [unnamed] = read_packages([str(inserted_package(Path(tmp) / "b", after=2, porte=None))], Options())
+            [wrong] = read_packages([str(inserted_package(Path(tmp) / "c", after=1, porte=2))], Options())
+        for result in (named, unnamed, wrong):
+            self.assertEqual(reasons(by_staff(result)[1]), {"olcu-belirsiz"})
+            self.assertEqual(reasons(by_staff(result)[2]), {"olcu-belirsiz"})
+
+    def test_items_of_a_score_of_several_parts_go_to_their_own_line(self) -> None:
+        staffs = [StaffResult({"porte": 2, "parti": 1, "partiPortesi": 1}),
+                  StaffResult({"porte": 5, "parti": 1, "partiPortesi": 1})]
+        items = [{"duzeltilmis": [3], "porte": 5, "parti": 1, "partiPortesi": 1},
+                 {"duzeltilmis": [3], "porte": 4, "parti": 0, "partiPortesi": 1},
+                 {"duzeltilmis": [3], "porte": None, "parti": 1, "partiPortesi": 1},
+                 {"duzeltilmis": [3], "porte": None, "parti": 1, "partiPortesi": 2},
+                 {"duzeltilmis": [3], "oncekiModelOlcusu": 2}]
+        self.assertEqual(inserted_for_line(items, (1, 1), staffs), [items[0], items[2], items[4]])
 
 
 class Measures(unittest.TestCase):

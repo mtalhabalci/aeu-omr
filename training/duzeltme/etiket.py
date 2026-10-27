@@ -623,6 +623,13 @@ class Hints:
     key_at_start: bool | None = None  # the reading has a key signature at the head of this staff (None: unknown)
     key_order: list[str] | None = None  # ... in this order of steps
     time_at_start: bool | None = None
+    # islemler.json has an olcu-isareti on the first measure: its time signature is the user's, not the default
+    # the app's writer puts there
+    meter_set_first: bool = False
+    # the reading's last measure and the corrected line's last measure (index): the barline that closes the score
+    # is the reading's, the app writes a light-heavy one there whatever the page has
+    reading_end: Measure | None = None
+    last_measure: int | None = None
 
 
 def _kern(event: Event) -> str:
@@ -702,15 +709,16 @@ def time_row(time: tuple[int, int]) -> Row:
     return Row(rhythm)
 
 
-def closing_rows(measure: Measure, twin: Measure | None) -> list[Row]:
+def closing_rows(measure: Measure, reading: Measure | None) -> list[Row]:
     """The tokens that close a measure: a repeat or an ending's end as the corrected file has it, else the
-    barline style the reading saw (unverified: the app draws every barline plain), else a plain barline."""
+    barline style the reading saw on the same measure (unverified: the app draws every barline plain, and the last
+    one light-heavy), else a plain barline. The corrected file's own bar-style is never used."""
     stop = {"stop": "voltaStop", "discontinue": "voltaDiscontinue"}.get(measure.ending_stop or "")
     if measure.repeat_end:
         return [Row("repeatEnd")] + ([Row(stop)] if stop else [])
     if stop:
         return [Row(stop)]
-    style = STYLE_TOKENS.get(twin.right_style or "") if twin is not None else None
+    style = STYLE_TOKENS.get(reading.right_style or "") if reading is not None else None
     if style:
         return [Row(style, unverified=frozenset({"rhythm"}))]
     return [Row("barline")]
@@ -718,8 +726,11 @@ def closing_rows(measure: Measure, twin: Measure | None) -> list[Row]:
 
 def _time_printed(line: StaffLine, measure: int, hints: Hints, at_start: bool) -> bool:
     """Whether the page prints a time signature at the start of this measure. The app writes one in the first
-    measure whatever the page has, and elsewhere only where the meter changes."""
+    measure whatever the page has, and elsewhere only where the meter changes. In the first measure it is the
+    page's when the reading has one there or the user set it (islemler.json olcu-isareti), else the default."""
     m = line.measures[measure]
+    if measure == 0 and hints.meter_set_first:
+        return True
     if measure > 0 and any(at == 0 for at, _ in m.times):
         return True
     if "olcu-isareti" in hints.edited.get(measure, set()):
@@ -781,11 +792,35 @@ def staff_rows(line: StaffLine, pieces: list[Piece], hints: Hints) -> list[Row]:
             out.append(event_row(event, octave_shift, hints))
         out += [Row(kind) for _, kind in jumps]
         if piece.ends:
-            out += closing_rows(measure, hints.twins.get(piece.measure))
+            reading = hints.twins.get(piece.measure)
+            if reading is None and piece.measure == hints.last_measure:
+                reading = hints.reading_end  # the last measure, merged or split by the user: the reading's end
+            out += closing_rows(measure, reading)
         rows += [row.masked() for row in out] if piece.masked else out
     for row in rows:
         row.check()
     return rows
+
+
+def writer_defaults(line: StaffLine, model: StaffLine | None, meter_set_first: bool) -> list[str]:
+    """What the app's writer put into this line by itself, which the labels do not take as the page's: a
+    light-heavy barline after the last measure the reading does not have, and a first-measure time signature the
+    reading does not have and the user did not set."""
+    found: list[str] = []
+    if not line.measures:
+        return found
+    last = line.measures[-1]
+    if last.right_style == "light-heavy" and not last.repeat_end and (
+        model is None or not model.measures or model.measures[-1].right_style != "light-heavy"
+    ):
+        found.append(f"son ölçü çizgisi (ölçü {last.number}, ince-kalın)")
+    first = line.measures[0]
+    times = [t for at, t in first.times if at == 0]
+    if times and not meter_set_first and (
+        model is not None and model.measures and not any(at == 0 for at, _ in model.measures[0].times)
+    ):
+        found.append(f"1. ölçünün ölçü işareti ({times[0][0]}/{times[0][1]})")
+    return found
 
 
 # --- the round trip -----------------------------------------------------------------------------------------------
