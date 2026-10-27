@@ -140,10 +140,12 @@ def top_voice(symbols: list[EncodedSymbol]) -> tuple[list[EncodedSymbol], bool]:
 
 @dataclass
 class SystemLayout:
-    """A system on the page: how many staffs it has and the braces and brackets over them."""
+    """A system on the page: how many staffs it has, the braces and brackets over them and the names printed
+    beside its slots (homr.part_names), when read."""
 
     staffs: int
     groups: list[StaffGroup] = field(default_factory=list)
+    names: list[str | None] = field(default_factory=list)
 
     def slots(self) -> list[list[int]]:
         """The system's staffs by part: a braced run of staffs is one slot, every other staff a slot alone."""
@@ -245,6 +247,12 @@ def plan_score(layouts: list[SystemLayout], clefs: list[list[str | None]] | None
                 braced[k] = len(slot) > 1
         picked = _fit(clefs[n], braced, clefs[ref_no], ref_braced)
         placement.append([ref_staffs[j] for j in picked])
+    # a part is named by the first system that prints a name beside it (the first system names in full)
+    for n, layout in enumerate(layouts):
+        for slot, name in zip(layout.slots(), layout.names, strict=False):
+            part = placement[n][slot[0]][0] if placement[n][slot[0]] is not None else None
+            if name and part is not None and parts[part].name is None:
+                parts[part].name = name
     return ScorePlan(parts, brackets, placement)
 
 

@@ -151,6 +151,14 @@ class TestPlan(unittest.TestCase):
         self.assertEqual(len(plan.parts), 1)
         self.assertEqual(plan.placement[1], [(0, 1), (0, 2)])
 
+    def test_parts_take_the_names_the_first_system_prints(self) -> None:
+        first = SystemLayout(3, [StaffGroup(BRACE, 1, 2)], ["Soprano", "Piano"])
+        later = SystemLayout(3, [StaffGroup(BRACE, 1, 2)], ["S.", None])
+        plan = plan_score([first, later])
+        self.assertEqual([p.name for p in plan.parts], ["Soprano", "Piano"])
+        plan = plan_score([SystemLayout(3, [StaffGroup(BRACE, 1, 2)], [None, None]), later])
+        self.assertEqual([p.name for p in plan.parts], ["S.", None])
+
     def test_piano_only_system_of_a_song_goes_to_the_piano(self) -> None:
         song = SystemLayout(3, [StaffGroup(BRACE, 1, 2)])
         plan = plan_score([song, PIANO], clefs=[["clef_G2", "clef_G2", "clef_F4"], ["clef_G2", "clef_F4"]])
@@ -169,6 +177,9 @@ class TestWriteScore(unittest.TestCase):
         group = root.find("part-list/part-group")
         self.assertEqual((group.get("type"), group.findtext("group-symbol")), ("start", "brace"))
         self.assertEqual(root.find("part-list/score-part/part-name").text, "Piano")
+        named = SystemLayout(2, [StaffGroup(BRACE, 0, 1)], ["Piyano"])
+        root, _ = write([named], [StaffReading(0, 0, tokens(TREBLE)), StaffReading(0, 1, tokens(BASS))])
+        self.assertEqual(root.find("part-list/score-part/part-name").text, "Piyano")
         clefs = {c.get("number"): c.findtext("sign") for c in parts[0].iter("clef")}
         self.assertEqual(clefs, {"1": "G", "2": "F"})
         lower = [n for n in notes(parts[0]) if n.findtext("staff") == "2"]
