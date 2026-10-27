@@ -1,6 +1,6 @@
 """Training samples from the correction packages the Musiki Akademisi app exports.
 
-    python -m training.duzeltme.paket_oku PAKET [PAKET ...] --cikti datasets/duzeltme [--ad train]
+    python -m training.duzeltme.paket_oku PAKET [PAKET ...] --cikti C:/projects/yl/musiki-duzeltme/okunmus [--ad train]
                                           [--olcu-maskele] [--yalniz-not]
 
 A user of the app corrects what our model read off a page and the app exports the correction as a package (the
@@ -976,6 +976,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--yalniz-not", action="store_true",
                         help="düzeltilen ölçü yalnız notasına dokunulduysa denetlenmiş sayılır")
     args = parser.parse_args(argv)
+    out = Path(args.cikti).resolve()
+    if out == git_root or git_root in out.parents:
+        # Talha's decision: what comes from the app is kept for some later use, apart from our training data, which
+        # the repository's datasets/ holds (the vocabulary build alone reads every .tokens there)
+        parser.error(f"--cikti depo içinde olamaz ({out}): uygulamadan gelen düzeltmeler bizim veriye karışmaz, "
+                     "depo dışında ayrı klasörde saklanır (OKU_BENI.md)")
     options = Options(mask_measures=args.olcu_maskele, notes_only=args.yalniz_not)
     refused: list[str] = []
     results = read_packages(args.paketler, options, refused)

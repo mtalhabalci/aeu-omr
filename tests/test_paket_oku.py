@@ -31,6 +31,7 @@ from training.duzeltme.etiket import (
     round_trip,
     row_texts,
 )
+from training.duzeltme import paket_oku
 from training.duzeltme.paket_oku import (
     Options,
     PackageError,
@@ -637,6 +638,11 @@ class ApprovalOfEveryPart(unittest.TestCase):
             out = Path(tmp) / "veri"
             self.assertEqual(main([str(old), "--cikti", str(out)]), 0)
             report = json.loads((out / "rapor.json").read_text(encoding="utf-8"))["paketler"][0]
+            # what comes from the app is kept apart: never written into the repository's datasets
+            inside = paket_oku.git_root / "datasets" / "duzeltme"
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                main([str(old), "--cikti", str(inside)])
+            self.assertFalse(inside.exists())
             # no option takes the approvals an unnamed app put on every part
             with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 main([str(old), "--cikti", str(Path(tmp) / "veri-yeter"), "--onay-yeter"])

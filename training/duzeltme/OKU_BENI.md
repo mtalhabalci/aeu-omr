@@ -6,10 +6,15 @@ dışa aktarır (biçim `musiki-akademisi-duzeltme/1`, yazıcısı uygulamada
 AEU-OMR eğitim örneğine çevirir: porte resmi (`.png`) + jeton satırları (`.tokens`), öteki eğitim setleriyle aynı
 düzende.
 
+**Bu veri bizim eğitim verimize karışmaz** (Talha'nın kararı, 27.10.2026): uygulamadan gelen düzeltmeler bir gün
+işe yarar diye saklanır; hiçbir eğitime, sınava ya da sözlüğe girmez. Paketler de okuyucunun çıktısı da depoların
+dışında, ayrı bir klasörde durur: `C:\projects\yl\musiki-duzeltme\`. Orada `paketler\` uygulamanın verdiği zipleri
+olduğu gibi, `okunmus\` okuyucunun çıktısını tutar. Okuyucu deponun içine (`datasets\` dahil) yazmayı reddeder.
+
 ## Çalıştırma
 
     cd C:\projects\yl\homr
-    C:\projects\yl\venv\Scripts\python.exe -m training.duzeltme.paket_oku PAKET [PAKET ...] --cikti datasets\duzeltme
+    C:\projects\yl\venv\Scripts\python.exe -m training.duzeltme.paket_oku PAKET [PAKET ...] --cikti C:\projects\yl\musiki-duzeltme\okunmus
 
 `PAKET`: uygulamanın verdiği zip (tek düzeltme ya da `index.json`'lu toplu paket) ya da açılmış klasörü.
 Seçenekler: `--ad train` (alt klasör ve dizin adı), `--olcu-maskele`, `--yalniz-not` (aşağıda).
