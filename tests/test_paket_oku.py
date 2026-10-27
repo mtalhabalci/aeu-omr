@@ -115,7 +115,8 @@ def page_png(boxes: list[list[int]], width: int = 1920, height: int = 1300) -> b
 
 def write_package(root: Path, files: dict[str, object], several: dict | None = None, image: bytes | None = None,
                   form: str = "musiki-akademisi-duzeltme/1", folder_name: str = FOLDER, version: int = 1,
-                  upload: str | None = None, app_version: str | None = None, marks: list | None = None) -> Path:
+                  upload: str | None = None, app_version: str | None = None, marks: list | None = None,
+                  control: dict | None = None) -> Path:
     folder = root / folder_name
     folder.mkdir(parents=True)
     for name, content in files.items():
@@ -137,6 +138,10 @@ def write_package(root: Path, files: dict[str, object], several: dict | None = N
         manifest["uygulamaSurumu"] = app_version
     if marks is not None:
         manifest["isaretler"] = marks
+    # the administrator took it for training, unless the test says otherwise ({} for a package without the field)
+    manifest["kontrol"] = {"durum": "egitime-alindi", "tarih": "2026-10-28"} if control is None else control
+    if not manifest["kontrol"]:
+        del manifest["kontrol"]
     (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (folder / "tempolar.json").write_text('{"kaynak": "musicxml", "kayitlar": []}', encoding="utf-8")
     if "islemler.json" not in files:
@@ -502,6 +507,38 @@ class SinglePart(unittest.TestCase):
             self.assertEqual([p["klasor"] for p in report["paketler"]], ["duzeltme-iyi"])
             self.assertEqual(len(report["reddedilenPaketler"]), 1)
             self.assertIn("musiki-akademisi-duzeltme/2", report["reddedilenPaketler"][0])
+
+
+class Control(unittest.TestCase):
+    def test_only_what_the_administrator_took_for_training(self) -> None:
+        cases = {"yok": {}, "bekliyor": {"durum": "bekliyor", "tarih": None},
+                 "egitime-alinmadi": {"durum": "egitime-alinmadi", "tarih": "2026-10-28"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            taken = by_staff(read_packages([str(single_package(Path(tmp) / "alindi"))], Options())[0])
+            refused = {}
+            for name, control in cases.items():
+                folder = single_package(Path(tmp) / name)
+                manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+                manifest["kontrol"] = control or None
+                if not control:
+                    del manifest["kontrol"]
+                (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+                [refused[name]] = read_packages([str(folder)], Options())
+        self.assertTrue(taken[1].accepted, taken[1].reasons)
+        for name, result in refused.items():
+            self.assertFalse(any(s.accepted for s in result.staffs), name)
+            self.assertIn({"neden": "yonetici-kontrolu", "ayrinti": f"kontrol: {name}"}, by_staff(result)[1].reasons)
+            # the other reasons stay in the report: what a reviewer would get by approving it
+            self.assertEqual(reasons(by_staff(result)[1]), {"yonetici-kontrolu"}, name)
+
+    def test_the_apps_format_samples_never_go_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = single_package(Path(tmp))
+            manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+            manifest.update({"modelVersion": "v-ornek", "riza": {"metinSurumu": "ornek", "tarih": "2026-10-27"}})
+            (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            [result] = read_packages([str(folder)], Options())
+        self.assertEqual(reasons(by_staff(result)[1]), {"ornek-paket"})
 
 
 class MultiPart(unittest.TestCase):

@@ -30,6 +30,8 @@ Which staffs (see OKU_BENI.md):
 - --yalniz-not counts a corrected measure as checked only when the correction touched its notes (perde, arıza,
   süre, nota, bağ, süsleme); a structural edit (repeat, volta, key, meter, a measure added or taken out) is made for
   every part at once and says nothing about the notes of the parts the user did not look at;
+- no staff of a package the app's administrator did not take for training (manifest kontrol.durum other than
+  egitime-alindi, or no kontrol: yonetici-kontrolu), nor of the app's format samples (ornek-paket);
 - records without a staff (porte: null: no staff boxes from the service) are skipped;
 - the staff's tokens must come back as the corrected score when written out again (etiket.round_trip);
 - of several corrections of one upload (anonimYukleme, else the original file's SHA-256) only the newest is taken
@@ -202,6 +204,8 @@ class PackageResult:
             "anonimYukleme": m.get("anonimYukleme"),
             "surum": m.get("surum"),
             "uygulamaSurumu": m.get("uygulamaSurumu"),
+            "kontrol": m.get("kontrol"),
+            "isaretler": m.get("isaretler"),
             "onayButunPartilere": not self.checks.approval,
             "yapisalDenetimSayilmaz": not self.checks.structure,
             "modelVersion": m.get("modelVersion"),
@@ -804,6 +808,20 @@ def process_package(package: Package, options: Options) -> PackageResult:
                 staff.reject("gidis-donus", staff.round_trip)
             else:
                 staff.round_trip = "tamam"
+
+    # what the app's administrator decided: only a correction version taken for training ("egitime-alindi", which
+    # also says the user finished it) gives samples; a package from before the field had no such decision. The app's
+    # own format samples never do.
+    control = manifest.get("kontrol") or {}
+    if control.get("durum") != "egitime-alindi":
+        detail = f"kontrol: {control.get('durum') or 'yok'}"
+        result.warnings.append(f"yönetici eğitime almadı ({detail}): hiçbir porte alınmaz")
+        for staff in result.staffs:
+            staff.reject("yonetici-kontrolu", detail)
+    if manifest.get("modelVersion") == "v-ornek" or (manifest.get("riza") or {}).get("metinSurumu") == "ornek":
+        result.warnings.append("uygulamanın biçim örneği: hiçbir porte alınmaz")
+        for staff in result.staffs:
+            staff.reject("ornek-paket", "uygulamanın biçim örneği (EĞİTİME GİRMEZ)")
 
     # pictures, for the staffs still taken
     wanted = sorted({s.entry.get("sayfa") for s in result.staffs if s.accepted and s.entry.get("sayfa")})
