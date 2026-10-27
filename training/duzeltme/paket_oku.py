@@ -20,9 +20,11 @@ Which staffs (see OKU_BENI.md):
   nobody looked at (bakilmadi) leaves the whole staff out. With --olcu-maskele such a staff is taken all the same,
   its unchecked measures written with every field unverified ("?"), which the training loss skips;
 - a staff the base model read (aeuDenetlenmeli: it does not know the AEU koma accidentals) only when every measure
-  on it was checked, also with --olcu-maskele, and a note on it was corrected: approving a measure covers every
-  part, and until it is settled that the user looked at this one approval alone does not do (aeu-yalniz-onay;
-  --onay-yeter turns this off);
+  on it was checked, also with --olcu-maskele;
+- in a score of several parts saved by an app that does not name itself (manifest uygulamaSurumu missing or null:
+  every version before the field), an approval or a structural edit was put on every staff of the measure, every
+  part: there only a correction of the notes counts as a check (onay-butun-partilere, yalniz-yapisal; --onay-yeter
+  takes the approvals all the same). An app that names itself puts an approval on the part the user chose only;
 - --yalniz-not counts a corrected measure as checked only when the correction touched its notes (perde, arıza,
   süre, nota, bağ, süsleme); a structural edit (repeat, volta, key, meter, a measure added or taken out) is made for
   every part at once and says nothing about the notes of the parts the user did not look at;
@@ -172,6 +174,7 @@ class PackageResult:
     warnings: list[str] = field(default_factory=list)
     skipped_records: int = 0  # olcular.json records without a staff (porte: null)
     defaults: list[str] = field(default_factory=list)  # what the app's writer put in by itself (not the page's)
+    carried: bool = False  # approvals and structural edits were put on every part (carried_to_all)
 
     def report(self) -> dict:
         m = self.manifest
@@ -180,6 +183,8 @@ class PackageResult:
             "anonimKimlik": m.get("anonimKimlik"),
             "anonimYukleme": m.get("anonimYukleme"),
             "surum": m.get("surum"),
+            "uygulamaSurumu": m.get("uygulamaSurumu"),
+            "onayButunPartilere": self.carried,
             "modelVersion": m.get("modelVersion"),
             "tur": m.get("tur"),
             "cokParti": "cokParti" in m,
@@ -258,17 +263,29 @@ def check_manifest(package: Package) -> dict:
 # --- which measures are on which staff ------------------------------------------------------------------------------
 
 
-def reviewed(record: dict, options: Options) -> bool:
-    """Whether the user looked at this measure of this staff."""
+def reviewed(record: dict, options: Options, carried: bool = False) -> bool:
+    """Whether the user looked at this measure of this staff. carried: the app that saved the correction put an
+    approval or a structural edit of a measure on every staff of the measure, every part (see carried_to_all)."""
     if record.get("durum") == "onaylandi":
-        return True
+        return not carried
     if record.get("durum") == "duzeltildi":
-        return not options.notes_only or bool(NOTE_KINDS & set(record.get("turler") or []))
+        return not (options.notes_only or carried) or bool(NOTE_KINDS & set(record.get("turler") or []))
     return False
 
 
-def _unreviewed_reason(record: dict) -> str:
+def _unreviewed_reason(record: dict, carried: bool = False) -> str:
+    if record.get("durum") == "onaylandi" and carried:
+        return "onay-butun-partilere"
     return "yalniz-yapisal" if record.get("durum") == "duzeltildi" else "bakilmadi"
+
+
+def carried_to_all(manifest: dict, entries: list[dict], options: Options) -> bool:
+    """A score of several parts saved by an app that does not name itself (no uygulamaSurumu: every version before
+    the field, and a tab opened before that release) put a measure's approval and its structural edits on every
+    staff of the measure, every part: there only a correction of the notes says the user looked at a staff.
+    --onay-yeter takes such approvals all the same."""
+    parts = {e.get("parti", 0) for e in entries}
+    return len(parts) > 1 and not manifest.get("uygulamaSurumu") and not options.approval_enough
 
 
 def _model_measure(model: StaffLine | None, number: int) -> Measure | None:
@@ -355,10 +372,11 @@ def plan_line(
     model: StaffLine | None,
     options: Options,
     meter_set_first: bool = False,
+    carried: bool = False,
 ) -> dict[int, Hints]:
     """Find the corrected measures of every staff of one line (one part's staff through the score) and which are
     masked; mark the staffs that cannot be taken. Returns the hints of the reading by staff (index in staffs).
-    meter_set_first: islemler.json sets the first measure's time signature."""
+    meter_set_first: islemler.json sets the first measure's time signature. carried: see carried_to_all."""
     by_number: dict[int, list[int]] = defaultdict(list)
     for index, measure in enumerate(corrected.measures):
         by_number[measure.number].append(index)
@@ -461,8 +479,8 @@ def plan_line(
         if index in inserted_at:
             behind.append({"durum": "duzeltildi", "turler": inserted_at[index].get("turler") or []})
         for record in behind:
-            if not reviewed(record, options):
-                return False, _unreviewed_reason(record)
+            if not reviewed(record, options, carried):
+                return False, _unreviewed_reason(record, carried)
         return bool(behind), ""
 
     hints: dict[int, Hints] = {}
@@ -486,8 +504,8 @@ def plan_line(
                 unchecked[why or "bakilmadi"].append(corrected.measures[piece.measure].number)
         for number in staff.model_measures:  # measures the user took out are no piece, but were looked at or not
             record = record_of[number]
-            if not of_model.get(number) and not reviewed(record, options):
-                unchecked[_unreviewed_reason(record)].append(number)
+            if not of_model.get(number) and not reviewed(record, options, carried):
+                unchecked[_unreviewed_reason(record, carried)].append(number)
         if unchecked:
             detail = "; ".join(f"{why}: ölçü {', '.join(map(str, sorted(set(n))))}" for why, n in unchecked.items())
             if not options.mask_measures:
@@ -500,17 +518,6 @@ def plan_line(
                 staff.reject("hic-bakilmamis", detail)
             elif options.mask_measures:
                 staff.masked = sorted({corrected.measures[p.measure].number for p in pieces if p.masked})
-        elif staff.base_model and not options.approval_enough:
-            # Until it is settled whether approving a measure vouches for every part: a staff the base model read
-            # is taken only when the user changed a note on it. A structural edit is made for every part at once
-            # and is no sign either that anybody looked at this one.
-            touched = [m for m in staff.model_measures if record_of[m].get("durum") == "duzeltildi"
-                       and NOTE_KINDS & set(record_of[m].get("turler") or [])]
-            touched += [i for i, item in inserted_at.items() if s in owners.get(i, set())
-                        and NOTE_KINDS & set(item.get("turler") or [])]
-            if not touched:
-                staff.reject("aeu-yalniz-onay", "temel modelin okuduğu portede notaya dokunan düzeltme yok, yalnız "
-                                                "ölçü onayı (bütün partileri kapsar); --onay-yeter ile alınır")
         staff.pieces = pieces
         for index in indices:
             m = corrected.measures[index]
@@ -686,6 +693,7 @@ def process_package(package: Package, options: Options) -> PackageResult:
         result.warnings.append("porte kutuları servisten değil (print-new-system tahmini): porte resmi kesilemez")
     if not entries:
         result.warnings.append("porteler.json boş")
+    result.carried = carried_to_all(manifest, entries, options)
 
     by_line: dict[tuple[int, int], list[StaffResult]] = defaultdict(list)
     for staff in result.staffs:
@@ -710,7 +718,7 @@ def process_package(package: Package, options: Options) -> PackageResult:
         meter_set_first = any(op.get("tur") == "olcu-isareti" and op.get("olcu") == first for op in operations)
         line_inserted = inserted_for_line(measure_doc.get("eklenenOlcular") or [], key, staffs)
         hints = plan_line(staffs, line_records, line_inserted, line, model_line, options,
-                          meter_set_first)
+                          meter_set_first, result.carried)
         where = f"parti {key[0]}, porte {key[1]}: " if several else ""
         result.defaults += [where + found for found in writer_defaults(line, model_line, meter_set_first)]
         for s, hint in hints.items():
@@ -900,7 +908,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--yalniz-not", action="store_true",
                         help="düzeltilen ölçü yalnız notasına dokunulduysa denetlenmiş sayılır")
     parser.add_argument("--onay-yeter", action="store_true",
-                        help="temel modelin okuduğu porte yalnız ölçü onayıyla da alınır (aeu-yalniz-onay kapanır)")
+                        help="sürümünü yazmayan uygulamanın çok partili paketinde de ölçü onayı ve yapısal düzeltme "
+                             "denetim sayılır (onay-butun-partilere kapanır)")
     args = parser.parse_args(argv)
     options = Options(mask_measures=args.olcu_maskele, notes_only=args.yalniz_not,
                       approval_enough=args.onay_yeter)

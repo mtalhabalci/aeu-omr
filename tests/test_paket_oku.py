@@ -111,7 +111,7 @@ def page_png(boxes: list[list[int]], width: int = 1920, height: int = 1300) -> b
 
 def write_package(root: Path, files: dict[str, object], several: dict | None = None, image: bytes | None = None,
                   form: str = "musiki-akademisi-duzeltme/1", folder_name: str = FOLDER, version: int = 1,
-                  upload: str | None = None) -> Path:
+                  upload: str | None = None, app_version: str | None = None) -> Path:
     folder = root / folder_name
     folder.mkdir(parents=True)
     for name, content in files.items():
@@ -129,6 +129,8 @@ def write_package(root: Path, files: dict[str, object], several: dict | None = N
         manifest["cokParti"] = several
     if upload:
         manifest["anonimYukleme"] = upload
+    if app_version:
+        manifest["uygulamaSurumu"] = app_version
     (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (folder / "tempolar.json").write_text('{"kaynak": "musicxml", "kayitlar": []}', encoding="utf-8")
     if "islemler.json" not in files:
@@ -281,8 +283,10 @@ def multi_corrected() -> str:
     return app_score([("P1", "Ses", voice), ("P2", "Piyano", piano)], GROUPS)
 
 
-def multi_package(root: Path, left_hand_first: str = "bakilmadi", cut_down: tuple[int, ...] | None = None) -> Path:
-    """cut_down: the staffs the service marked ustSesKirpildi (None: an answer from before the field existed)."""
+def multi_package(root: Path, left_hand_first: str = "bakilmadi", cut_down: tuple[int, ...] | None = None,
+                  app_version: str | None = None) -> Path:
+    """cut_down: the staffs the service marked ustSesKirpildi (None: an answer from before the field existed).
+    app_version: the manifest's uygulamaSurumu (None: an app from before the field)."""
     places = [(1, 0, 1, "v24"), (1, 1, 1, "temel"), (1, 1, 2, "temel"), (2, 0, 1, "v24"), (2, 1, 1, "temel"),
               (2, 1, 2, "temel")]
     staffs = []
@@ -312,7 +316,7 @@ def multi_package(root: Path, left_hand_first: str = "bakilmadi", cut_down: tupl
         "olcular.json": {"olcular": records, "eklenenOlcular": []},
     }
     several = {"olcuKaydi": "porte", "partiPorteSayilari": [1, 2], "servisDuzeni": "duzeltilmis-servis-duzeni.musicxml"}
-    return write_package(root, files, several, image=page_png(MULTI_BOXES))
+    return write_package(root, files, several, image=page_png(MULTI_BOXES), app_version=app_version)
 
 
 def by_staff(result) -> dict:  # noqa: ANN001
@@ -496,14 +500,12 @@ class SinglePart(unittest.TestCase):
 class MultiPart(unittest.TestCase):
     def test_staffs_by_their_own_measures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            [package] = load_packages(str(multi_package(Path(tmp))))
+            [package] = load_packages(str(multi_package(Path(tmp), app_version="5e1c0d2")))
             staffs = by_staff(process_package(package, Options()))
         self.assertEqual(reasons(staffs[1]), {"bakilmadi"})  # the voice, system 1
         self.assertEqual(reasons(staffs[3]), {"bakilmadi", "aeu-denetlenmedi"})  # the left hand, system 1
-        # the piano of system 2 was only approved, the base model read it: not taken on approval alone
-        self.assertEqual(reasons(staffs[5]), {"aeu-yalniz-onay"})
-        self.assertEqual(reasons(staffs[6]), {"aeu-yalniz-onay"})
-        self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4])
+        # the piano of system 2 was approved on the part the user chose
+        self.assertEqual([n for n, s in staffs.items() if s.accepted], [2, 4, 5, 6])
         self.assertEqual(row_texts(staffs[2].rows), [
             "clef_G2 _ _ _ upper",
             "timeSignature_2/4 . . . .",
@@ -550,28 +552,51 @@ class MultiPart(unittest.TestCase):
                                                      "note_2 A3 _ _ upper", "barline . . . ."])
 
 
-class ApprovalAlone(unittest.TestCase):
-    def test_base_model_staff_needs_a_note_correction_unless_approval_is_enough(self) -> None:
+class ApprovalOfEveryPart(unittest.TestCase):
+    @staticmethod
+    def staffs_of(folder: Path, options: Options) -> dict:
+        [package] = load_packages(str(folder))
+        return by_staff(process_package(package, options))
+
+    @staticmethod
+    def structural_edit_on_staff_5(folder: Path) -> None:
+        doc = json.loads((folder / "olcular.json").read_text(encoding="utf-8"))
+        doc["olcular"][4].update({"durum": "duzeltildi", "turler": ["isaret"]})
+        (folder / "olcular.json").write_text(json.dumps(doc), encoding="utf-8")
+
+    def test_approval_counts_where_the_app_names_itself(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            folder = multi_package(Path(tmp))
-            [package] = load_packages(str(folder))
-            cautious = by_staff(process_package(package, Options()))
-            enough = by_staff(process_package(package, Options(approval_enough=True)))
-            # a structural edit is made for every part: it is no sign that anybody looked at this staff
-            doc = json.loads((folder / "olcular.json").read_text(encoding="utf-8"))
-            doc["olcular"][4].update({"durum": "duzeltildi", "turler": ["isaret"]})
-            (folder / "olcular.json").write_text(json.dumps(doc), encoding="utf-8")
-            [package] = load_packages(str(folder))
-            structural = by_staff(process_package(package, Options()))
+            old = multi_package(Path(tmp) / "eski")
+            new = multi_package(Path(tmp) / "yeni", app_version="5e1c0d2")
+            before = self.staffs_of(old, Options())
+            enough = self.staffs_of(old, Options(approval_enough=True))
+            named = self.staffs_of(new, Options())
+            # a structural edit was put on every part as well: no check of this staff in the old package
+            self.structural_edit_on_staff_5(old)
+            self.structural_edit_on_staff_5(new)
+            structural_before, structural_named = self.staffs_of(old, Options()), self.staffs_of(new, Options())
             out = Path(tmp) / "veri"
-            self.assertEqual(main([str(folder), "--cikti", str(out), "--onay-yeter"]), 0)
-            report = json.loads((out / "rapor.json").read_text(encoding="utf-8"))
-        self.assertTrue(cautious[2].accepted)  # the right hand of system 1: a pitch corrected on it
-        self.assertEqual([n for n, s in cautious.items() if "aeu-yalniz-onay" in reasons(s)], [5, 6])
+            self.assertEqual(main([str(old), "--cikti", str(out)]), 0)
+            report = json.loads((out / "rapor.json").read_text(encoding="utf-8"))["paketler"][0]
+            out = Path(tmp) / "veri-yeter"
+            self.assertEqual(main([str(old), "--cikti", str(out), "--onay-yeter"]), 0)
+            report_enough = json.loads((out / "rapor.json").read_text(encoding="utf-8"))
+        self.assertEqual([n for n, s in before.items() if s.accepted], [2, 4])  # pitches corrected on them
+        self.assertEqual([n for n, s in before.items() if "onay-butun-partilere" in reasons(s)], [5, 6])
         self.assertEqual([n for n, s in enough.items() if s.accepted], [2, 4, 5, 6])
-        self.assertEqual(reasons(structural[5]), {"aeu-yalniz-onay"})
-        self.assertTrue(report["ayarlar"]["onayYeter"])
-        self.assertEqual([s["porte"] for s in report["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 5, 6])
+        self.assertEqual([n for n, s in named.items() if s.accepted], [2, 4, 5, 6])
+        self.assertEqual(reasons(structural_before[5]), {"yalniz-yapisal", "aeu-denetlenmedi"})
+        self.assertTrue(structural_named[5].accepted, structural_named[5].reasons)
+        self.assertIsNone(report["uygulamaSurumu"])
+        self.assertTrue(report["onayButunPartilere"])
+        self.assertTrue(report_enough["ayarlar"]["onayYeter"])
+        self.assertFalse(report_enough["paketler"][0]["onayButunPartilere"])
+        self.assertEqual([s["porte"] for s in report_enough["paketler"][0]["porteler"] if s["kabul"]], [2, 4, 5, 6])
+
+    def test_single_part_approval_is_that_parts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            staffs = self.staffs_of(single_package(Path(tmp)), Options())
+        self.assertTrue(staffs[1].accepted, staffs[1].reasons)  # measures 1 and 2 only approved
 
 
 class WriterDefaults(unittest.TestCase):
