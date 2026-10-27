@@ -106,6 +106,7 @@ class XmlGeneratorArguments:
         staff_measures: list[tuple[int, int]] | None = None,
         tempo_marks: dict[int, tuple] | None = None,
         header: dict | None = None,
+        split_rest_chords: bool = False,
     ):
         self.large_page = large_page
         self.metronome = metronome
@@ -126,6 +127,10 @@ class XmlGeneratorArguments:
         # makam, form, usul, yore, kaynak; a missing or empty field is left out): the work's name becomes
         # <work-title>, composer and lyricist <creator>s, the rest <miscellaneous-field>s
         self.header = header or {}
+        # a reading with chords can hold a rest and a note of the same length at one onset (a second voice
+        # resting); written as one chord that is a chord headed by a rest, which MusicXML does not allow. When
+        # set, such rests go after the chord's notes with a <backup>, so that they are a voice of their own
+        self.split_rest_chords = split_rest_chords
 
 
 # header fields written as <miscellaneous-field name="..."> (MusicXML has no element of its own for them)
@@ -185,6 +190,32 @@ def generate_xml(
     return root
 
 
+def stream_division(voice: list[EncodedSymbol]) -> int:
+    """The division (per whole note) that holds every note and rest of the symbols, chord members included.
+
+    build_measures finds its division from the shortest member of each chord only, so a longer member of a finer
+    value (a dotted note against a triplet) can come out as a duration of 0, which MusicXML does not allow. Staffs
+    written into one part also need one division."""
+    durations = [Fraction(1, 4)]
+    for symbol in voice:
+        if symbol.rhythm.startswith(("note", "rest")) and "G" not in symbol.rhythm:
+            fraction = symbol.get_duration().fraction
+            if fraction > 0:
+                durations.append(fraction)
+    return find_common_division(durations)
+
+
+def build_staff_measures(
+    args: XmlGeneratorArguments, voice: list[EncodedSymbol], division: int | None = None
+) -> list[mxl.XMLMeasure]:
+    """One staff's measures as generate_xml writes a part (ties, the makam resolver), for a caller that puts
+    several staffs into parts of its own (homr.score_parts). args.staff_measures, when a list, gets the measures
+    of every newline; tempo marks and the metronome are left to the caller."""
+    return build_measures(
+        args, resolve_sounding(slurs_on_equal_notes_as_ties(voice)), True, False, division
+    )
+
+
 def slurs_on_equal_notes_as_ties(voice: list[EncodedSymbol]) -> list[EncodedSymbol]:
     """A curve over two neighbouring notes of the same pitch is a tie, whatever the model called it.
 
@@ -242,7 +273,10 @@ def build_measures(
     voice: list[EncodedSymbol],
     is_first_part: bool,
     has_two_staves: bool = False,
+    division: int | None = None,
 ) -> list[mxl.XMLMeasure]:
+    """The measures of one staff's symbols. division (per whole note) is found from the symbols unless given:
+    staffs written into one part must share it (see stream_division)."""
     def close_current_measure() -> None:
         rebalance_measure_voices(current_measure)
         for barline in current_measure.get_children_of_type(mxl.XMLBarline):
@@ -262,7 +296,7 @@ def build_measures(
             chord_duration = (
                 group.get_duration() if pos_no == len(staff_positions) - 1 else Fraction(0)
             )
-            for note_xml in build_note_chord(staff_pos, state, chord_duration):
+            for note_xml in build_note_chord(staff_pos, state, chord_duration, args.split_rest_chords):
                 current_measure.add_child(note_xml)
         played_now.append(group)
 
@@ -297,7 +331,8 @@ def build_measures(
     repeat_shown: list[bool] = []
     measure_number = 1
     groups = add_tuplet_start_stop(group_into_chords(voice))
-    division, nominator = find_division_and_time_signature_nominator(groups)
+    found_division, nominator = find_division_and_time_signature_nominator(groups)
+    division = division or found_division
     state = ConversionState(division, nominator)
     measures: list[mxl.XMLMeasure] = []
     current_measure = open_measure(measure_number)
@@ -1025,7 +1060,10 @@ def build_multi_measure_rest(
 
 
 def build_note_chord(
-    note_chord: SymbolChord, state: ConversionState, chord_duration: Fraction
+    note_chord: SymbolChord,
+    state: ConversionState,
+    chord_duration: Fraction,
+    split_rest_chords: bool = False,
 ) -> list[mxl.XMLElement]:
     # Ties and slurs used to be stripped here and dropped on the floor. That
     # matters for a makam score: a note too long for one symbol is engraved as
@@ -1037,8 +1075,22 @@ def build_note_chord(
     final_duration = Fraction(0)
     sorted_durations = sorted(by_duration)
     for i, group_duration in enumerate(sorted_durations):
+        members = by_duration[group_duration]
+        rests = [n for n in members if n.pitch == empty and n.rhythm.startswith("rest")]
+        if split_rest_chords and rests and (len(rests) < len(members) or len(rests) > 1):
+            # notes first as the chord, then one rest of the same length after a backup: a voice of its own
+            members = [n for n in members if n not in rests]
+            if members and group_duration > Fraction(0):
+                members = members + [None]
+            members = members + [rests[0]]
         is_first = True
-        for note_loop in by_duration[group_duration]:
+        for note_loop in members:
+            if note_loop is None:
+                backup = mxl.XMLBackup()
+                backup.add_child(mxl.XMLDuration(value_=int(group_duration * state.division)))
+                result.append(backup)
+                is_first = True
+                continue
             note = note_loop
             result.append(build_note_or_rest(note, i, not is_first, state, note_chord.tuplet_mark))
             is_first = False
