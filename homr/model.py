@@ -407,6 +407,10 @@ class MultiStaff(DebugDrawable):
     def __init__(self, staffs: list[Staff], connections: list[RotatedBoundingBox]) -> None:
         self.staffs = sorted(staffs, key=lambda s: s.min_y)
         self.connections = connections
+        # every tall mark found across the system's height (braces, brackets, the system's start line, barlines
+        # through several staffs), whether or not it joined two staffs; filled when the staffs are kept apart,
+        # for homr.staff_groups to tell braces from brackets
+        self.tall_marks: list[RotatedBoundingBox] = []
 
     def merge(self, other: "MultiStaff") -> "MultiStaff":
         unique_staffs = []

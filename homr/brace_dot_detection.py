@@ -137,11 +137,27 @@ def _create_grandstaffs(staffs: list[MultiStaff]) -> list[MultiStaff]:
     return [s.create_grandstaffs() for s in staffs]
 
 
+def _tall_marks_of_system(
+    system: MultiStaff, brace_dot: list[RotatedBoundingBox]
+) -> list[RotatedBoundingBox]:
+    """The tall marks whose middle lies between the system's top and bottom line."""
+    top = min(staff.min_y for staff in system.staffs)
+    bottom = max(staff.max_y for staff in system.staffs)
+    return [mark for mark in brace_dot if top <= mark.center[1] <= bottom]
+
+
 def find_braces_brackets_and_grand_staff_lines(
-    debug: Debug, staffs: list[Staff], brace_dot: list[RotatedBoundingBox]
+    debug: Debug,
+    staffs: list[Staff],
+    brace_dot: list[RotatedBoundingBox],
+    merge_grand_staffs: bool = True,
 ) -> list[MultiStaff]:
     """
     Connect staffs from multiple voices or grand staffs by searching for brackets and grand staffs.
+
+    With merge_grand_staffs False the staffs of a system stay apart (no blind pairing into grand
+    staffs) and each system carries the tall marks across its height (MultiStaff.tall_marks), so
+    that braces and brackets can be told apart afterwards (homr.staff_groups).
     """
     brace_dot = _filter_for_tall_elements(brace_dot, staffs)
     result = []
@@ -160,4 +176,9 @@ def find_braces_brackets_and_grand_staff_lines(
         if not any_connected_neighbor:
             result.append(MultiStaff([staff], []))
 
-    return _create_grandstaffs(_merge_multi_staff_if_they_share_a_staff(result))
+    systems = _merge_multi_staff_if_they_share_a_staff(result)
+    if not merge_grand_staffs:
+        for system in systems:
+            system.tall_marks = _tall_marks_of_system(system, brace_dot)
+        return systems
+    return _create_grandstaffs(systems)

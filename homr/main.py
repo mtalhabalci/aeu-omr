@@ -221,8 +221,12 @@ def process_image(
 
 
 def detect_staffs_in_image(
-    image_path: str, config: ProcessingConfig
+    image_path: str, config: ProcessingConfig, merge_grand_staffs: bool = True
 ) -> tuple[list[MultiStaff], NDArray, Debug, Future[str]]:
+    """
+    The staffs of the image, grouped into systems. merge_grand_staffs False keeps the staffs of a
+    system apart and gives each system its tall marks (see find_braces_brackets_and_grand_staff_lines).
+    """
     predictions, debug = load_and_preprocess_predictions(
         image_path, config.enable_debug, config.enable_cache, config.use_gpu_inference
     )
@@ -274,7 +278,9 @@ def detect_staffs_in_image(
         staffs, noteheads_with_stems, predictions.symbols, predictions.notehead
     )
 
-    multi_staffs = find_braces_brackets_and_grand_staff_lines(debug, staffs, brace_dot)
+    multi_staffs = find_braces_brackets_and_grand_staff_lines(
+        debug, staffs, brace_dot, merge_grand_staffs
+    )
     eprint(
         "Found",
         len(multi_staffs),
