@@ -23,7 +23,6 @@ import copy
 import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, field
-from fractions import Fraction
 
 from homr.music_xml_generator import (
     XmlGeneratorArguments,

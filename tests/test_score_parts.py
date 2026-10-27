@@ -201,7 +201,8 @@ class TestWriteScore(unittest.TestCase):
 
     def test_shorter_staff_is_filled_with_a_measure_rest(self) -> None:
         one_measure = "\n".join(TREBLE.splitlines()[:8])
-        root, _ = write([SystemLayout(2)], [StaffReading(0, 0, tokens(TREBLE)), StaffReading(0, 1, tokens(one_measure))])
+        readings = [StaffReading(0, 0, tokens(TREBLE)), StaffReading(0, 1, tokens(one_measure))]
+        root, _ = write([SystemLayout(2)], readings)
         second = root.findall("part")[1].findall("measure")
         self.assertEqual(len(second), 2)
         rest = second[1].find("note")
@@ -222,7 +223,9 @@ class TestWriteScore(unittest.TestCase):
         self.assertEqual(written.measures[3:], [(3, 4), (3, 4)])
 
     def test_rest_and_note_of_one_length_are_not_a_chord(self) -> None:
-        reading = tokens("clef_G2 . . . upper\nrest_4 _ _ _ upper&note_4 C5 _ _ upper\nnote_2. D5 _ _ upper\nbarline . . . .")
+        reading = tokens(
+            "clef_G2 . . . upper\nrest_4 _ _ _ upper&note_4 C5 _ _ upper\nnote_2. D5 _ _ upper\nbarline . . . ."
+        )
         root, _ = write([SystemLayout(2)], [StaffReading(0, 0, reading), StaffReading(0, 1, tokens(BASS))],
                         split_rest_chords=True)
         measure = root.find("part/measure")
