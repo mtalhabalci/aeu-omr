@@ -35,6 +35,13 @@ yazılır, öteki paketler yine okunur, çıkış kodu 2 olur.
 Bir porte, servisin `porteler.json`'daki bir kutusudur (çok partili notada her sistemin her portesi ayrı numara
 alır). Portedeki ölçüler kutunun `olcuBas..olcuSon` aralığıdır; her ölçünün durumu `olcular.json`'dan.
 
+0. **Yönetici eğitime almış olmalı** (`yonetici-kontrolu`): manifest `kontrol.durum` `egitime-alindi` değilse
+   (`bekliyor`, `egitime-alinmadi`, ya da alan yok: o alandan önceki paket) paketin hiçbir portesi alınmaz.
+   `egitime-alindi`, kullanıcının sürümü bitirdiğini ve koma denetiminin tamam olduğunu da içerir. Toplu pakette
+   durum hep `egitime-alindi`'dır; tek tek indirilen paket (yönetici incelemesi) her durumda iner, okuyucudan
+   geçirilince raporda öteki nedenler de görünür: yönetici "eğitime al" derse ne alınacağını önceden görür.
+   Uygulamanın biçim örnekleri (`modelVersion: "v-ornek"` ya da `riza.metinSurumu: "ornek"`) de alınmaz
+   (`ornek-paket`). Raporda paket başına `kontrol` ve `isaretler`.
 1. **Bütün ölçüleri bakılmış olmalı**: her ölçü `duzeltildi` ya da `onaylandi`. Tek bir `bakilmadi` ölçü
    bütün porteyi dışarıda bırakır (`bakilmadi`). Gerekçe: bakılmamış ölçü modelin kendi okumasıdır; doğru
    sayılırsa model kendi hatasını öğrenir.
