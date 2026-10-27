@@ -583,11 +583,12 @@ def plan_line(
             if m is not None and (m.chord_notes or m.other_voices):
                 staff.reject("akor-ikinci-ses", f"okumada ölçü {number} akor ya da ikinci ses taşıyor; "
                                                 "düzeltme yalnız ilk sesi tutar")
-        if staff.entry.get("ustSesKirpildi"):
+        cut = staff.entry.get("ustSesKirpildi")  # true | false; missing or not a boolean: not known
+        if cut is True:
             # the service cut the staff's chords or second voice down to its top line: the page holds more than the
             # correction can
             staff.reject("ust-ses-kirpildi", "serviste akor ya da ikinci ses üst sese indirildi; etiket eksik olur")
-        elif staff.entry.get("okuyan") == "temel" and "ustSesKirpildi" not in staff.entry:
+        elif staff.entry.get("okuyan") == "temel" and not isinstance(cut, bool):
             # an answer from before the service said which staffs it cut down
             staff.warnings.append("temel model okudu: sayfada akor ya da ikinci ses varsa servis yalnız üst sesi "
                                   "yazmış olabilir, etiket o sesleri taşımaz")

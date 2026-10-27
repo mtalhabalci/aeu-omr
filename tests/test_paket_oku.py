@@ -587,6 +587,19 @@ class MultiPart(unittest.TestCase):
         # the service said which staffs it cut down: no guessing warning on the others
         self.assertFalse(any("temel model" in " ".join(staffs[n].warnings) for n in (2, 6)))
 
+    def test_a_cut_down_value_that_is_no_boolean_is_not_known(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = multi_package(Path(tmp), cut_down=(), app_version="f0f9e602b1a9")
+            doc = json.loads((folder / "porteler.json").read_text(encoding="utf-8"))
+            doc["porteler"][4]["ustSesKirpildi"] = None
+            doc["porteler"][5]["ustSesKirpildi"] = "true"
+            (folder / "porteler.json").write_text(json.dumps(doc), encoding="utf-8")
+            staffs = by_staff(read_packages([str(folder)], Options())[0])
+        for n in (5, 6):
+            self.assertTrue(staffs[n].accepted, staffs[n].reasons)
+            self.assertIn("temel model okudu", " ".join(staffs[n].warnings))
+        self.assertNotIn("temel model okudu", " ".join(staffs[2].warnings))  # false: known
+
     def test_checked_base_model_staff_is_taken(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             [package] = load_packages(str(multi_package(Path(tmp), left_hand_first="onaylandi")))
