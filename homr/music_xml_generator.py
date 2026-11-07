@@ -11,6 +11,7 @@ import numpy as np
 from homr import constants
 from homr.makam_key import resolve_sounding
 from homr.simple_logging import eprint
+from homr.usul_meter import mark_bars_mxl
 from homr.transformer.vocabulary import (
     EncodedSymbol,
     empty,
@@ -182,14 +183,14 @@ def generate_xml(
     has_two_staves_by_part = [_voice_has_two_staves(staff) for staff in staffs]
     root.add_child(build_part_list(has_two_staves_by_part))
     for index, staff in enumerate(staffs):
-        root.add_child(
-            build_part(
-                args,
-                resolve_sounding(slurs_on_equal_notes_as_ties(staff)),
-                index,
-                has_two_staves_by_part[index],
-            )
+        part = build_part(
+            args,
+            resolve_sounding(slurs_on_equal_notes_as_ties(staff)),
+            index,
+            has_two_staves_by_part[index],
         )
+        mark_bars_mxl(part)  # a long usul's bar ("28/4 (4/4)"), as the measures show it
+        root.add_child(part)
     return root
 
 

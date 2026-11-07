@@ -99,6 +99,7 @@ from homr.staff_groups import find_staff_groups
 from homr.staff_parsing import prepare_staff_image
 from homr.staff_regions import StaffRegions
 from homr.tempo_reader import read_tempo_marks
+from homr.usul_meter import bar_of, meter_of
 from homr.transformer.configs import Config
 from homr.transformer.vocabulary import EncodedSymbol
 from training.architecture.transformer.tromr_arch import load_model
@@ -145,23 +146,20 @@ def page_count(path: str) -> int:
 
 def measures_off_meter(musicxml: str) -> list[int]:
     """Measures whose notes and rests do not add up to the time signature: a duration was misread. The first and
-    last measure may be short (an upbeat and the measure that completes it), so they count only when too long."""
+    last measure may be short (an upbeat and the measure that completes it), so they count only when too long. A
+    long usul written with its bar ("28/4 (4/4)", homr.usul_meter) takes a measure of either length as whole."""
     root = ET.fromstring(musicxml)
     off: set[int] = set()
     for part in root.findall("./part"):  # every part on its own; a measure counts once
         measures = part.findall("measure")
-        divisions, meter = 1, None
+        divisions, whole = 1, set()
         for index, measure in enumerate(measures):
             for attributes in measure.findall("attributes"):
                 divisions = int(attributes.findtext("divisions") or divisions)
                 time_signature = attributes.find("time")
                 if time_signature is not None:
-                    try:
-                        meter = Fraction(int(time_signature.findtext("beats")),
-                                         int(time_signature.findtext("beat-type")))
-                    except (TypeError, ValueError):
-                        meter = None
-            if meter is None or measure.find("attributes/measure-style/multiple-rest") is not None:
+                    whole = {m for m in (meter_of(time_signature), bar_of(time_signature)) if m}
+            if not whole or measure.find("attributes/measure-style/multiple-rest") is not None:
                 continue
             voices: dict[str, int] = {}
             for note in measure.findall("note"):
@@ -170,7 +168,7 @@ def measures_off_meter(musicxml: str) -> list[int]:
                     voices[voice] = voices.get(voice, 0) + int(note.findtext("duration") or 0)
             length = Fraction(max(voices.values(), default=0), divisions * 4)
             edge = index in (0, len(measures) - 1)
-            if length > meter or (length < meter and not edge):
+            if length not in whole and (length > max(whole) or not edge):
                 off.add(int(measure.get("number")))
     return sorted(off)
 

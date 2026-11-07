@@ -36,6 +36,7 @@ from homr.music_xml_generator import (
     stream_division,
 )
 from homr.staff_groups import BRACE, BRACKET, StaffGroup
+from homr.usul_meter import mark_bars
 from homr.transformer.vocabulary import EncodedSymbol, empty, sort_token_chords
 
 # the order of <attributes>' children in the MusicXML 4.0 schema
@@ -520,6 +521,8 @@ def write_score(
         for measure_number, mark in args.tempo_marks.items():
             if 1 <= measure_number <= len(first_part):
                 first_part[measure_number - 1].insert(0, _element(build_tempo_direction(*mark)))
+    for part_element in part_elements:
+        mark_bars(part_element)  # a long usul's bar ("28/4 (4/4)"), as the measures show it
     ET.indent(root, space="  ")
     return WrittenScore(
         ET.tostring(root, encoding="unicode"),
