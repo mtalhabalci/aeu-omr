@@ -41,15 +41,6 @@ def bar_of(time: ET.Element) -> Fraction | None:
     return meter_of(other) if other is not None else None
 
 
-def measure_length(measure: ET.Element, divisions: int) -> Fraction:
-    """The notes and rests of a measure as a fraction of a whole note: the longest of its voices."""
-    voices: Counter = Counter()
-    for note in measure.findall("note"):
-        if note.find("chord") is None and note.find("grace") is None:
-            voices[(note.findtext("staff") or "1", note.findtext("voice") or "1")] += int(note.findtext("duration") or 0)
-    return Fraction(max(voices.values(), default=0), divisions * 4)
-
-
 def _bar(length: Fraction, beat_type: int) -> tuple[int, int] | None:
     """length as beats of the usul's beat type, or of a finer one where it needs it (2 quarters under 32/8: 4/8)."""
     while beat_type <= MAX_BEAT_TYPE:
@@ -60,23 +51,68 @@ def _bar(length: Fraction, beat_type: int) -> tuple[int, int] | None:
     return None
 
 
+def _measure_facts(measure: ET.Element) -> tuple[list[tuple[int | None, tuple[int, int] | None | bool]], bool, Counter]:
+    """What section_bars needs of a measure: per <attributes> its divisions and its first <time> ((beats, beat type);
+    False for one without both numbers; None for none), whether it is a multimeasure rest, and its voices' durations."""
+    attributes = []
+    for element in measure.findall("attributes"):
+        time = element.find("time")
+        stated = None
+        if time is not None:
+            beats, beat_type = _int(time.findtext("beats")), _int(time.findtext("beat-type"))
+            stated = (beats, beat_type) if beats and beat_type else False
+        attributes.append((_int(element.findtext("divisions")), stated))
+    voices: Counter = Counter()
+    for note in measure.findall("note"):
+        if note.find("chord") is None and note.find("grace") is None:
+            voices[(note.findtext("staff") or "1", note.findtext("voice") or "1")] += int(note.findtext("duration") or 0)
+    return attributes, measure.find("attributes/measure-style/multiple-rest") is not None, voices
+
+
+def _measure_facts_mxl(measure: mxl.XMLMeasure) -> tuple[list[tuple[int | None, tuple[int, int] | None | bool]], bool,
+                                                        Counter]:
+    """The same of a measure built with the musicxml library, read off its objects rather than its text."""
+    def value(element: mxl.XMLElement, kind: type) -> object:
+        found = element.get_children_of_type(kind)
+        return found[0].value_ if found else None
+
+    attributes, multirest = [], False
+    for element in measure.get_children_of_type(mxl.XMLAttributes):
+        divisions = value(element, mxl.XMLDivisions)
+        stated = None
+        times = element.get_children_of_type(mxl.XMLTime)
+        if times:
+            beats, beat_type = _int(str(value(times[0], mxl.XMLBeats))), _int(str(value(times[0], mxl.XMLBeatType)))
+            stated = (beats, beat_type) if beats and beat_type else False
+        attributes.append((_int(str(divisions)) if divisions is not None else None, stated))
+        multirest = multirest or any(style.get_children_of_type(mxl.XMLMultipleRest)
+                                     for style in element.get_children_of_type(mxl.XMLMeasureStyle))
+    voices: Counter = Counter()
+    for note in measure.get_children_of_type(mxl.XMLNote):
+        if not note.get_children_of_type(mxl.XMLChord) and not note.get_children_of_type(mxl.XMLGrace):
+            staff, voice = value(note, mxl.XMLStaff), value(note, mxl.XMLVoice)
+            voices[(str(staff) if staff is not None else "1", str(voice) if voice is not None else "1")] += int(
+                value(note, mxl.XMLDuration) or 0)
+    return attributes, multirest, voices
+
+
 def section_bars(part: ET.Element) -> dict[int, tuple[int, int]]:
     """For each measure (index in the part) holding a <time>, the bar its section is divided into, where there is one.
     """
-    measures = part.findall("measure")
+    return _bars([_measure_facts(measure) for measure in part.findall("measure")])
+
+
+def _bars(measures: list) -> dict[int, tuple[int, int]]:
     divisions = 1
     sections: list[tuple[int, Fraction, int, list[Fraction]]] = []  # (measure index, usul, beat type, lengths)
-    for index, measure in enumerate(measures):
-        for attributes in measure.findall("attributes"):
-            divisions = _int(attributes.findtext("divisions")) or divisions
-            time = attributes.find("time")
-            if time is not None:
-                meter = meter_of(time)
-                sections.append((index, meter, _int(time.findtext("beat-type")) or 0, []) if meter else
-                                (index, Fraction(0), 0, []))
-        if not sections or measure.find("attributes/measure-style/multiple-rest") is not None:
+    for index, (attributes, multirest, voices) in enumerate(measures):
+        for stated_divisions, stated in attributes:
+            divisions = stated_divisions or divisions
+            if stated is not None:
+                sections.append((index, Fraction(*stated), stated[1], []) if stated else (index, Fraction(0), 0, []))
+        if not sections or multirest:
             continue
-        length = measure_length(measure, divisions)
+        length = Fraction(max(voices.values(), default=0), divisions * 4)
         if length:
             sections[-1][3].append(length)
     bars = {}
@@ -111,10 +147,10 @@ def mark_bars(part: ET.Element) -> None:
 
 def mark_bars_mxl(part: mxl.XMLPart) -> None:
     """The same on a part built with the musicxml library, which generate_xml writes."""
-    bars = section_bars(ET.fromstring(part.to_string()))
+    measures = part.get_children_of_type(mxl.XMLMeasure)
+    bars = _bars([_measure_facts_mxl(measure) for measure in measures])
     if not bars:
         return
-    measures = part.get_children_of_type(mxl.XMLMeasure)
     for index, (beats, beat_type) in bars.items():
         for attributes in measures[index].get_children_of_type(mxl.XMLAttributes):
             for time in attributes.get_children_of_type(mxl.XMLTime):
