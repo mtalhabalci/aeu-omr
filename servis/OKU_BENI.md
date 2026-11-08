@@ -23,6 +23,7 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
 | `OMR_TEMPO_ARALIK_MODEL` | `training/architecture/tempo/tempo_okuyucu_aralik.pt` | aralıkları (♩ = 72–84) daha iyi okuyan ikinci okuyucu; yalnız aralık okuduğu yerde kullanılır, yoksa atlanır |
 | `OMR_TEMEL_MODEL` | `training/architecture/transformer/pytorch_model_331-e103465…pth` | çok sesli porteleri okuyan temel model (v24'ün ince ayara başladığı homr koşusu 331; git dışında). Dosya yoksa servis yine açılır, bütün porteleri v24 okur |
 | `OMR_COKSES_B` | kapalı | `1`: akor ve ikinci ses yazılır, tek porteli sistemler de iki modelle okunur (aşağıda "Çok seslilik") |
+| `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur; `0`/`1`: tek tek. Her porte tek başına okunduğu gibi okunur, notalar ve güvenler son bitine kadar aynı (`training/architecture/transformer/exact_batch.py`). Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz (aşağıda "Süre") |
 
 ## Uç noktalar
 
@@ -254,6 +255,24 @@ Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün 
 | Mus2, 2 sayfa (hicaz) | 16 | 13,6 sn | – |
 | Dizgi, 1 sayfa | 8 | 6,6–7,0 sn | 11,2 sn |
 | El yazısı, 1 sayfa | 8 | 7,0 sn | – |
+
+### Porteleri birlikte okuma (08.11.2026, işlemci, 4 iş parçacığı)
+
+10 eser (20 sayfa) ve 6 çok porteli sistem resmi (142 porte), tek süreç, makine boşken:
+
+| | Toplam | Porte okuma | Sayfa/saat | Tepe bellek |
+|---|---:|---:|---:|---:|
+| Önceki kod | 362 sn | 171 sn | 199 | 4,33 GB |
+| `OMR_TOPLU_PORTE=0` | 337 sn | 163 sn | 214 | 4,37 GB |
+| `OMR_TOPLU_PORTE=4` | 276 sn | 101 sn | 260 | 4,08 GB |
+| `OMR_TOPLU_PORTE=8` | 270 sn | 94 sn | 267 | 4,11 GB |
+
+- Kapalıyken de ~%7 hızlı: tempo okuyucusu bir şeridin kesitlerini her modelden bir kez geçirir (aralık modeli
+  üçüncü modelle aynı dosyaydı, iki kez okunuyordu).
+- Toplu okumada tepe bellek düşer: çapraz dikkatin önbelleği her adımda kopyalanmaz.
+- Okumaların aynı olduğu 240 girdide (150 eser, 200 sayfa, 1.630 porte; 90 çok porteli sistem, 299 porte) önceki
+  kodla bayt bayt karşılaştırıldı: `4` ve `8` ile 240/240, kapalıyken 60/60 aynı (MusicXML ve yanıt, `sureMs` hariç).
+- Tepe belleği 9 porteli bir sistem resmi (1858×1358) çıkarıyor; önceki kodda da 4,3 GB.
 
 ## Örnekler
 

@@ -87,6 +87,7 @@ adresinden indirilir (sağlama toplamıyla). Çalışan konteyner model indirmez
 | `OMR_PORT` | `8765` | |
 | `OMR_COKSES_B` | `0` | `1`: akor ve ikinci ses yazılır, tek porteli sistemler de iki modelle okunur |
 | `OMR_TEMEL_MODEL` | `kod/training/architecture/transformer/pytorch_model_331-…pth` | temel modelin ağırlığı |
+| `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur (`0`/`1`: tek tek); okuma tek tek okumayla son bitine kadar aynı. Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz |
 | `OMP_NUM_THREADS`, `MKL_NUM_THREADS` | `4` | modelin kullandığı iş parçacığı; `cpus` sınırıyla aynı tutun |
 
 ## Eşzamanlılık ve zaman aşımı
@@ -117,3 +118,19 @@ Okumalar HTTP üzerinden, eşzamanlı istekle yapıldı; ikisinde de 4 iş parç
 - **Sunucuda süre:** Sanal sunucu masaüstüyle hemen hemen aynı hızda okur. Zaman aşımı önerisi bu yüzden pay bırakır.
 - **Bellek:** Sayfalar sırayla okunduğundan bellek sayfa sayısıyla büyümez. 4 GB sınır yeterli pay bırakır.
 - **İşlemci:** Okuma sırasında verilen 4 çekirdek dolar; boştayken işlemci kullanılmaz.
+
+### Porteleri birlikte okuma (masaüstü, 08.11.2026)
+
+Docker'sız, 4 iş parçacığı, 10 eser (20 sayfa) ve 6 çok porteli sistem resmi:
+
+| | Toplam | Sayfa/saat | Tepe bellek |
+|---|---:|---:|---:|
+| Önceki kod | 362 sn | 199 | 4,33 GB |
+| `OMR_TOPLU_PORTE=4` | 276 sn | 260 | 4,08 GB |
+| `OMR_TOPLU_PORTE=8` | 270 sn | 267 | 4,11 GB |
+
+Ayrıntı ve okumaların aynılık sınavı: `servis/OKU_BENI.md`, "Süre".
+
+- **Bellek uyarısı:** 9 porteli bir çok sesli sistem resmi (1858×1358) masaüstünde süreci 4,3 GB'a çıkardı.
+  Bu, önceki kodda da böyle; masaüstü ölçümü sunucudakinden yüksek çıkar (1 sayfada 2,1 GB'a karşı 1,58 GB). Büyük
+  çok sesli sayfalarda konteynerin belleği izlenmeli, 4 GB sınır dar kalabilir.

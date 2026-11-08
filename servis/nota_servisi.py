@@ -66,6 +66,7 @@ import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from concurrent.futures import Future
 from fractions import Fraction
 
@@ -81,7 +82,7 @@ from homr.baslik_okuyucu import prepare as prepare_header_reader
 from homr.baslik_okuyucu import read_header
 from homr.main import ProcessingConfig, detect_staffs_in_image
 from homr.makam_key import resolve_western_sounding
-from homr.model import MultiStaff
+from homr.model import MultiStaff, Staff
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
 from homr.octave_clef import mark_octave_clef
 from homr.part_names import read_part_names
@@ -118,6 +119,10 @@ BASE_MODEL_PATH = os.environ.get("OMR_TEMEL_MODEL", os.path.join(
 COKSES_B = os.environ.get("OMR_COKSES_B") == "1"
 # porteler[].okuyan: which model read a staff
 MAKAM_READER, BASE_READER = "v24", "temel"
+# the staffs of a page read together, at most this many at a time (each reads as it reads alone, bit for bit:
+# training/architecture/transformer/exact_batch.py); 0 or 1: one at a time. With 4, 20 pages and 6 systems were
+# read in 276 s (one at a time, 337 s), at a lower peak: 4.08 GB, 4.37 GB (CPU, 4 threads; servis/OKU_BENI.md).
+STAFFS_TOGETHER = int(os.environ.get("OMR_TOPLU_PORTE", "0") or 0)
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -337,6 +342,43 @@ class Reader:
             symbols = self.model.generate(tensor.unsqueeze(0))
         return [s for s in symbols if not s.is_control_symbol()], MAKAM_READER
 
+    def _read_staffs(self, staffs: list[tuple[torch.Tensor, bool]],
+                     cancel: threading.Event | None) -> list[tuple[list[EncodedSymbol], str]]:
+        """_read_staff for each of a page's staffs (its tensor, whether polyphony is possible), in their order.
+        With STAFFS_TOGETHER above 1 a model reads them together, as many at a time, each as it reads it alone:
+        the base model first those where polyphony is possible, then the makam model the rest. cancel, when set,
+        stops the reading before the next staff, or the next staffs read together."""
+
+        def cancelled() -> None:
+            if cancel is not None and cancel.is_set():
+                raise Cancelled
+
+        if STAFFS_TOGETHER <= 1:
+            results = []
+            for tensor, polyphony_possible in staffs:
+                cancelled()
+                results.append(self._read_staff(tensor, polyphony_possible))
+            return results
+
+        def together(model, numbers: list[int]) -> Iterator[tuple[int, list[EncodedSymbol]]]:  # noqa: ANN001
+            for first in range(0, len(numbers), STAFFS_TOGETHER):
+                cancelled()
+                chunk = numbers[first:first + STAFFS_TOGETHER]
+                yield from zip(chunk, model.generate_batch([staffs[n][0].unsqueeze(0) for n in chunk]), strict=True)
+
+        results: list[tuple[list[EncodedSymbol], str] | None] = [None] * len(staffs)
+        base = [n for n, (_, possible) in enumerate(staffs) if possible and self.base_model is not None]
+        makam = [n for n in range(len(staffs)) if n not in base]
+        for n, symbols in together(self.base_model, base):
+            symbols = [s for s in symbols if not s.is_control_symbol()]
+            if is_polyphonic(symbols):
+                results[n] = (resolve_western_sounding(on_one_staff(symbols)), BASE_READER)
+            else:
+                makam.append(n)
+        for n, symbols in together(self.model, sorted(makam)):
+            results[n] = ([s for s in symbols if not s.is_control_symbol()], MAKAM_READER)
+        return results
+
     def read(self, path: str, pages: list[int] | None = None, progress=None,
              cancel: threading.Event | None = None) -> dict:
         """Read the given 1-based pages of a PDF (all when None; an image is page 1). progress(pages_done, staffs)
@@ -392,6 +434,7 @@ class Reader:
                                   "kaynak": source})
                 found = sorted((s for multi in systems for s in multi.staffs), key=lambda s: s.min_y)
                 page_first = len(staff_boxes)
+                cuts: list[tuple[Staff, torch.Tensor]] = []  # the page's staffs that could be cut, top to bottom
                 for number, staff in enumerate(found):
                     if cancel is not None and cancel.is_set():
                         raise Cancelled
@@ -401,9 +444,11 @@ class Reader:
                         warnings.append(f"{where}, {number + 1}. porte kesilemedi; atlandı.")
                         continue
                     gray = cut if cut.ndim == 2 else cv2.cvtColor(cut, cv2.COLOR_BGR2GRAY)
-                    tensor = pad_to_3_dims(ndarray_to_tensor(gray)).to(self.device)
+                    cuts.append((staff, pad_to_3_dims(ndarray_to_tensor(gray)).to(self.device)))
+                page_read = self._read_staffs([(tensor, layouts[system_of[id(staff)][0]].staffs > 1 or COKSES_B)
+                                               for staff, tensor in cuts], cancel)
+                for (staff, _), (symbols, by) in zip(cuts, page_read, strict=True):
                     system_no, place = system_of[id(staff)]
-                    symbols, by = self._read_staff(tensor, layouts[system_no].staffs > 1 or COKSES_B)
                     try:  # a treble clef with a small 8 (a tenor's): the vocabulary has no octave clef. Over a
                         # system's top staff stands its first measure's number, where an 8 over the clef would be
                         symbols, octave = mark_octave_clef(symbols, preprocessed, staff, above=place > 0)
