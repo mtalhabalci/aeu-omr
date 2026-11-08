@@ -292,7 +292,10 @@ Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün 
   Okuma başına biriken bir şey yok. Linux'ta ise bir toplu okuma süreci ~25 eserde 1,6 GB'tan 3,4 GB'a çıktı:
   glibc, okumanın iş parçacıklarının bıraktığı belleği kendi arenalarında tutuyor. `OMR_BELLEK_BIRAK=1` bunu her
   okumadan sonra geri verir. glibc 2.31'de (WSL) dört iş parçacığının bıraktığı 1.282 MB, `malloc_trim(0)` ile
-  63 MB'a indi; `MALLOC_ARENA_MAX=2` tek başına yalnız 1.028 MB'a indirdi. Sunucudaki etkisi henüz ölçülmedi.
+  63 MB'a indi; `MALLOC_ARENA_MAX=2` tek başına yalnız 1.028 MB'a indirdi.
+  Sunucuda (Atkoşar, T=4, 08.11.2026) ayarsız süreç ~25 eserde 1,6 GB'tan 3 GB'a çıktı. `MALLOC_ARENA_MAX=2` ile
+  ~52 eserde 3 GB'a vardı. Her okumadan sonra `malloc_trim(0)` ile ~80 eser boyunca eser aralarında 1,6–2,3 GB
+  kaldı; okurken tepe 3,0 GB'a çıkıp hemen indi. Hız değişmedi (10 dakikada 32–33 eser).
 
 ## Örnekler
 
