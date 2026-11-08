@@ -88,6 +88,7 @@ adresinden indirilir (sağlama toplamıyla). Çalışan konteyner model indirmez
 | `OMR_COKSES_B` | `0` | `1`: akor ve ikinci ses yazılır, tek porteli sistemler de iki modelle okunur |
 | `OMR_TEMEL_MODEL` | `kod/training/architecture/transformer/pytorch_model_331-…pth` | temel modelin ağırlığı |
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur (`0`/`1`: tek tek); okuma tek tek okumayla son bitine kadar aynı. Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz |
+| `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz (`baslikBilgisi` uyarısız `null`; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul yok); eser başına ~1 sn kazanç. Künyesi katalogdan gelen toplu okuma için |
 | `OMP_NUM_THREADS`, `MKL_NUM_THREADS` | `4` | modelin kullandığı iş parçacığı; `cpus` sınırıyla aynı tutun |
 
 ## Eşzamanlılık ve zaman aşımı

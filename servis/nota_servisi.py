@@ -12,8 +12,9 @@
                             and "baslikBilgisi": the title block read by OCR above the first staff of the first page
                             that has one (eserAdi, makam, form, usul, bestekar, gufte, yore, kaynak as printed, null
                             when not found; guven and kutu per field found, kutu in that page's pixels like the staff
-                            boxes; sayfa); null, with a warning, when it could not be read. The same fields go into
-                            the MusicXML (<work-title>, <creator>, <miscellaneous-field>).
+                            boxes; sayfa); null, with a warning, when it could not be read, and null without one when
+                            OMR_BASLIK_OKU=0. The same fields go into the MusicXML (<work-title>, <creator>,
+                            <miscellaneous-field>).
                             "yanitSurumu" is the answer's format version (2); "cokSesli" is true when any system read
                             has more than one staff (staffs joined by a brace, a bracket or a common barline), so
                             the app can tell a score of several parts. Each "porteler" item then also says where the
@@ -55,7 +56,8 @@ Talha 24.10), each written as a <software> of its own.
 
 Environment: OMR_MODEL (weights), OMR_TEMEL_MODEL (the base model's weights; without them every staff is read by
 the makam model), OMR_COKSES_B=1 (chords and second voices), OMR_MODEL_SURUM (reported version), OMR_YAZILIM
-(<software> names, separated by ";"), OMR_ANAHTAR, OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU.
+(<software> names, separated by ";"), OMR_ANAHTAR, OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU,
+OMR_TOPLU_PORTE (staffs read together), OMR_BASLIK_OKU=0 (the title block not read).
 """
 
 import os
@@ -123,6 +125,9 @@ MAKAM_READER, BASE_READER = "v24", "temel"
 # training/architecture/transformer/exact_batch.py); 0 or 1: one at a time. With 4, 20 pages and 6 systems were
 # read in 275 s (one at a time, 324 s), at a lower peak: 2.68 GB, 2.88 GB (CPU, 4 threads; servis/OKU_BENI.md).
 STAFFS_TOGETHER = int(os.environ.get("OMR_TOPLU_PORTE", "0") or 0)
+# 0: the title block is not read (baslikBilgisi null without a warning, no title, composer, lyricist, makam, form or
+# usul in the MusicXML), for a library whose titles come from its catalogue: ~1 s less a work (servis/OKU_BENI.md)
+READ_HEADER = os.environ.get("OMR_BASLIK_OKU", "1") != "0"
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -474,7 +479,7 @@ class Reader:
                 raise ReadError(422, "porte_bulunamadi",
                                 "Görüntüde okunabilir porte bulunamadı. Sayfanın tamamı, düz ve net çekilmiş "
                                 "olmalı.")
-            header = self._title_block(header_page, warnings)
+            header = self._title_block(header_page, warnings) if READ_HEADER else None
             polyphonic = any(layout.staffs > 1 or layout.groups for layout in layouts)
             base_read = [n for n, by in enumerate(read_by, 1) if by == BASE_READER]
             plan: ScorePlan | None = None

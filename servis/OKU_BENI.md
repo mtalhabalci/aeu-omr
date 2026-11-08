@@ -24,6 +24,7 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
 | `OMR_TEMEL_MODEL` | `training/architecture/transformer/pytorch_model_331-e103465…pth` | çok sesli porteleri okuyan temel model (v24'ün ince ayara başladığı homr koşusu 331; git dışında). Dosya yoksa servis yine açılır, bütün porteleri v24 okur |
 | `OMR_COKSES_B` | kapalı | `1`: akor ve ikinci ses yazılır, tek porteli sistemler de iki modelle okunur (aşağıda "Çok seslilik") |
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur; `0`/`1`: tek tek. Her porte tek başına okunduğu gibi okunur, notalar ve güvenler son bitine kadar aynı (`training/architecture/transformer/exact_batch.py`). Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz (aşağıda "Süre") |
+| `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz. `baslikBilgisi` uyarısız `null` döner; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul olmaz. Künyesi katalogdan gelen toplu okuma içindir: eser başına ~1 sn kazandırır. Gerisi başlık okunduğundaki gibidir, bayt bayt (aşağıda "Süre") |
 
 ## Uç noktalar
 
@@ -281,6 +282,9 @@ Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün 
 - Okuma, sürecin önce ne okuduğuna bağlı değil: 247 girdi (240 ve 7 Atkoşar eseri) tek süreçte düz ve ters sırayla
   bayt bayt aynı. Önceden nota başı sayılan birkaç piksellik bir leke her okumada başka bir elips alabiliyor,
   bir ölçü çizgisini örtüp porte düşürebiliyordu (`homr/bounding_boxes.py`).
+- `OMR_BASLIK_OKU=0` (aynı set, `OMR_TOPLU_PORTE=4`, art arda): 263 sn → 251 sn. Eser başına 0,4–1,4 sn, sistem
+  resmi başına ~0,6 sn kazanç; tepe bellek aynı. Başlık bilgisi eserin portesi olan ilk sayfasında bir kez okunur.
+  247 girdide başlık dışında her şey (MusicXML ve yanıt) başlık okunduğundaki gibi, bayt bayt.
 
 ## Örnekler
 
