@@ -413,6 +413,19 @@ def create_lines(
     return _get_box_for_whole_group(merge_overlaying_bounding_boxes(boxes))
 
 
+def _no_ellipse_through(contour: cvt.MatLike) -> bool:
+    """Fewer than five distinct points, or points on two rows or two columns of pixels (a sliver at most two pixels
+    thick): no ellipse goes through them, the conic through them is a pair of lines. cv2.fitEllipse returns an
+    ellipse of rounding noise for such a contour, and not the same one from call to call: it changed with what the
+    process had allocated before (one in a hundred notehead contours; in a page of Atkoşar 1416 such an ellipse
+    passed as a notehead after some readings and not after others, hid a bar line and with it the page's last
+    staff)."""
+    points = {(int(x), int(y)) for x, y in contour.reshape(-1, 2)}
+    columns = len({x for x, _ in points})
+    rows = len({y for _, y in points})
+    return len(points) < 5 or min(columns, rows) <= 2
+
+
 def create_bounding_ellipses(
     img: NDArray,
     skip_merging: bool = False,
@@ -423,7 +436,7 @@ def create_bounding_ellipses(
     boxes = []
     for i, countour in enumerate(contours):
         min_length_to_fit_ellipse = 5  # this is a requirement by opencv
-        if len(countour) < min_length_to_fit_ellipse:
+        if len(countour) < min_length_to_fit_ellipse or _no_ellipse_through(countour):
             continue
         fitBox = cv2.fitEllipse(countour)
         if not _has_box_valid_size(fitBox):

@@ -1,8 +1,14 @@
 import unittest
 
+import cv2
 import numpy as np
 
-from homr.bounding_boxes import BoundingEllipse, RotatedBoundingBox
+from homr.bounding_boxes import (
+    BoundingEllipse,
+    RotatedBoundingBox,
+    _no_ellipse_through,
+    create_bounding_ellipses,
+)
 
 empty = np.array([])
 
@@ -55,3 +61,26 @@ class TestBoundingBoxes(unittest.TestCase):
         )
         ellipse2 = BoundingEllipse(((536.93896484375, 470.5845947265625), (13, 17), 5), empty)
         self.assertFalse(box2.is_overlapping(ellipse2))
+
+    def test_no_ellipse_goes_through_a_sliver_or_too_few_points(self) -> None:
+        def contour(points: list[list[int]]) -> np.ndarray:
+            return np.array(points, np.int32).reshape(-1, 1, 2)
+
+        # notehead contours of Atkoşar 1416 whose cv2.fitEllipse changed from call to call
+        self.assertTrue(_no_ellipse_through(contour([[1374, 2388], [1373, 2389], [1372, 2389], [1377, 2389],
+                                                     [1376, 2388]])))  # two rows
+        self.assertTrue(_no_ellipse_through(contour([[840, 1253], [840, 1258], [842, 1258], [842, 1256],
+                                                     [840, 1254]])))  # two columns
+        self.assertTrue(_no_ellipse_through(contour([[1795, 2409], [1796, 2409], [1797, 2410], [1796, 2411],
+                                                     [1797, 2410], [1796, 2409]])))  # four points apart
+        self.assertFalse(_no_ellipse_through(contour([[10, 0], [13, 1], [14, 4], [13, 7], [10, 8], [7, 7],
+                                                      [6, 4], [7, 1]])))
+
+    def test_a_notehead_keeps_its_ellipse_beside_a_sliver(self) -> None:
+        image = np.zeros((40, 60), np.uint8)
+        image[10:12, 5:25] = 1
+        cv2.ellipse(image, (40, 25), (6, 4), 0, 0, 360, 1, -1)
+        ellipses = create_bounding_ellipses(image, skip_merging=True)
+        self.assertEqual(len(ellipses), 1)
+        self.assertAlmostEqual(ellipses[0].center[0], 40, delta=1)
+        self.assertAlmostEqual(ellipses[0].center[1], 25, delta=1)
