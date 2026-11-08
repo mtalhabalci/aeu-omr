@@ -25,6 +25,7 @@ from training.architecture.transformer.custom_x_transformer import (
     LayerIntermediates,
     TokenEmbedding,
 )
+from training.architecture.transformer.exact_batch import exact_rows
 
 
 class ScoreTransformerWrapper(nn.Module):
@@ -335,51 +336,8 @@ class ScoreDecoder(nn.Module):
             articulation_sample = articulationsp[:, -1, :].argmax(dim=-1, keepdim=True)
             position_sample = positionsp[:, -1, :].argmax(dim=-1, keepdim=True)
 
-            if misread_opening_meter(symbols, self.inv_rhythm_vocab[int(rhythm_sample[0][0])]):
-                meters = rhythmsp[0, -1, self.meter_ids]
-                rhythm_sample[0][0] = self.meter_ids[int(meters.argmax())]
-                pitch_sample[0][0] = self.config.pitch_vocab[nonote]
-                lift_sample[0][0] = self.config.lift_vocab[nonote]
-                articulation_sample[0][0] = self.config.articulation_vocab[nonote]
-                position_sample[0][0] = self.config.position_vocab[nonote]
-
-            lift_token = detokenize(lift_sample, self.inv_lift_vocab)
-            pitch_token = detokenize(pitch_sample, self.inv_pitch_vocab)
-            rhythm_token = detokenize(rhythm_sample, self.inv_rhythm_vocab)
-            articulation_token = detokenize(articulation_sample, self.inv_articulation_vocab)
-            position_token = detokenize(position_sample, self.inv_position_vocab)
-
-            if rhythm_sample[0][0] == self.eos_token:
-                break
-
-            symbol = EncodedSymbol(
-                rhythm=rhythm_token[0],
-                pitch=pitch_token[0],
-                lift=lift_token[0],
-                articulation=articulation_token[0],
-                position=position_token[0],
-            )
-            symbols.append(symbol)
-            sureness.append((
-                float(torch.softmax(pitchsp[0, -1, :].float(), dim=-1)[pitch_sample[0][0]])
-                if pitch_token[0] != nonote else 1.0,
-                float(torch.softmax(liftsp[0, -1, :].float(), dim=-1)[lift_sample[0][0]])
-                if lift_token[0] != nonote else 1.0,
-            ))
-            # the best rhythm choices of this step, the chosen one first, for fix_measure_sums;
-            # at a time signature the best other time signatures, which it may take instead
-            logp = torch.log_softmax(rhythmsp[0, -1, :].float(), dim=-1)
-            chosen = int(rhythm_sample[0][0])
-            pool = torch.tensor(self.meter_ids if chosen in self.meter_ids else range(len(logp)), device=logp.device)
-            top = logp[pool].topk(RHYTHM_ALTERNATIVES)
-            alternatives.append([(self.inv_rhythm_vocab[chosen], float(logp[chosen]))] + [
-                (self.inv_rhythm_vocab[int(i)], float(v)) for v, i in zip(top.values, pool[top.indices])
-                if int(i) != chosen
-            ])
-            if ends_in_loop(symbols):
-                del symbols[-LOOP_RUN:]
-                del alternatives[-LOOP_RUN:]
-                del sureness[-LOOP_RUN:]
+            samples = (rhythm_sample, pitch_sample, lift_sample, articulation_sample, position_sample)
+            if not self._take_row(0, (rhythmsp, pitchsp, liftsp), samples, symbols, alternatives, sureness):
                 break
 
             out_lift = torch.cat((out_lift, lift_sample), dim=-1)
@@ -388,6 +346,85 @@ class ScoreDecoder(nn.Module):
             out_articulations = torch.cat((out_articulations, articulation_sample), dim=-1)
             mask = F.pad(mask, (0, 1), value=True)
 
+        self._score(symbols, alternatives, sureness)
+        self.net.train(was_training)
+        return symbols
+
+    def _rhythm_pools(self, device: torch.device, size: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """The rhythm ids among which a step's alternatives are chosen: the time signatures, and every rhythm."""
+        key = (str(device), size)
+        pools = self.__dict__.setdefault("_pools", {})
+        if key not in pools:
+            pools[key] = (torch.tensor(self.meter_ids, device=device), torch.tensor(range(size), device=device))
+        return pools[key]
+
+    def _take_row(
+        self,
+        i: int,
+        logits: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        samples: tuple[torch.Tensor, ...],
+        symbols: list[EncodedSymbol],
+        alternatives: list[list[tuple[str, float]]],
+        sureness: list[tuple[float, float]],
+    ) -> bool:
+        """Row i of a decoding step: its symbol, the probabilities of its choices and its rhythm alternatives,
+        appended to that staff's lists. samples are the step's greedy choices (rhythm, pitch, lift, articulation,
+        position; one row per staff), changed in place where a choice is overruled. False when the staff's reading
+        has ended (the end token, or a loop cut off)."""
+        rhythmsp, pitchsp, liftsp = logits
+        rhythm_sample, pitch_sample, lift_sample, articulation_sample, position_sample = samples
+        if misread_opening_meter(symbols, self.inv_rhythm_vocab[int(rhythm_sample[i][0])]):
+            meters = rhythmsp[i, -1, self.meter_ids]
+            rhythm_sample[i][0] = self.meter_ids[int(meters.argmax())]
+            pitch_sample[i][0] = self.config.pitch_vocab[nonote]
+            lift_sample[i][0] = self.config.lift_vocab[nonote]
+            articulation_sample[i][0] = self.config.articulation_vocab[nonote]
+            position_sample[i][0] = self.config.position_vocab[nonote]
+
+        lift_token = detokenize(lift_sample[i], self.inv_lift_vocab)
+        pitch_token = detokenize(pitch_sample[i], self.inv_pitch_vocab)
+        rhythm_token = detokenize(rhythm_sample[i], self.inv_rhythm_vocab)
+        articulation_token = detokenize(articulation_sample[i], self.inv_articulation_vocab)
+        position_token = detokenize(position_sample[i], self.inv_position_vocab)
+
+        if rhythm_sample[i][0] == self.eos_token:
+            return False
+
+        symbol = EncodedSymbol(
+            rhythm=rhythm_token[0],
+            pitch=pitch_token[0],
+            lift=lift_token[0],
+            articulation=articulation_token[0],
+            position=position_token[0],
+        )
+        symbols.append(symbol)
+        sureness.append((
+            float(torch.softmax(pitchsp[i, -1, :].float(), dim=-1)[pitch_sample[i][0]])
+            if pitch_token[0] != nonote else 1.0,
+            float(torch.softmax(liftsp[i, -1, :].float(), dim=-1)[lift_sample[i][0]])
+            if lift_token[0] != nonote else 1.0,
+        ))
+        # the best rhythm choices of this step, the chosen one first, for fix_measure_sums;
+        # at a time signature the best other time signatures, which it may take instead
+        logp = torch.log_softmax(rhythmsp[i, -1, :].float(), dim=-1)
+        chosen = int(rhythm_sample[i][0])
+        meter_pool, all_pool = self._rhythm_pools(logp.device, len(logp))
+        pool = meter_pool if chosen in self.meter_ids else all_pool
+        top = logp[pool].topk(RHYTHM_ALTERNATIVES)
+        alternatives.append([(self.inv_rhythm_vocab[chosen], float(logp[chosen]))] + [
+            (self.inv_rhythm_vocab[int(j)], float(v)) for v, j in zip(top.values, pool[top.indices])
+            if int(j) != chosen
+        ])
+        if ends_in_loop(symbols):
+            del symbols[-LOOP_RUN:]
+            del alternatives[-LOOP_RUN:]
+            del sureness[-LOOP_RUN:]
+            return False
+        return True
+
+    @staticmethod
+    def _score(symbols: list[EncodedSymbol], alternatives: list[list[tuple[str, float]]],
+               sureness: list[tuple[float, float]]) -> None:
         fix_measure_sums(symbols, alternatives)
         # After the measure fix, so a rhythm it re-chose is scored by its own probability. Pitch and accidental
         # count only where they mean something, on notes and key-signature rows: a barline, repeat or time
@@ -398,6 +435,60 @@ class ScoreDecoder(nn.Module):
                 symbol.confidence = min(rhythm_p, pitch_p, lift_p)
             else:
                 symbol.confidence = rhythm_p
+
+    @torch.no_grad()
+    def generate_batch(self, contexts: list[torch.Tensor]) -> list[list[EncodedSymbol]]:
+        """generate for several staffs at once: each staff's encoder output (1, positions, dim), its reading in
+        the same order. A staff's reading is the one generate gives it alone, symbol for symbol and confidence
+        for confidence (exact_batch). The staffs step together; a staff whose reading has ended leaves the
+        batch."""
+        if not contexts:
+            return []
+        was_training = self.net.training
+        self.net.eval()
+        rows = len(contexts)
+        context = torch.cat(contexts)
+        context_later = context[:, :0]
+        device = context.device
+        x_rhythm = torch.ones((rows, 1), dtype=torch.long, device=device)  # the start token
+        x_pitch = x_lift = x_articulations = torch.zeros((rows, 1), dtype=torch.long, device=device)
+        mask = torch.ones((rows, 1), dtype=torch.bool, device=self.device)
+        cache = [torch.zeros((rows, 8, 0, 64), dtype=torch.float32).to(self.device) for _ in range(32)]
+        symbols: list[list[EncodedSymbol]] = [[] for _ in range(rows)]
+        alternatives: list[list[list[tuple[str, float]]]] = [[] for _ in range(rows)]
+        sureness: list[list[tuple[float, float]]] = [[] for _ in range(rows)]
+        staffs = list(range(rows))  # the staff of each row of the batch
+        with exact_rows(self.net):
+            for step in range(self.max_seq_len):
+                rhythmsp, pitchsp, liftsp, positionsp, articulationsp, _, _, cache = self.net(
+                    rhythms=x_rhythm,
+                    pitchs=x_pitch,
+                    lifts=x_lift,
+                    articulations=x_articulations,
+                    context=context if step == 0 else context_later,
+                    cache_len=torch.Tensor([step]).to(self.device).long(),
+                    mask=mask,
+                    cache=cache,
+                    return_center_of_attention=False,
+                )
+                samples = tuple(p[:, -1, :].argmax(dim=-1, keepdim=True)
+                                for p in (rhythmsp, pitchsp, liftsp, articulationsp, positionsp))
+                going = [i for i, staff in enumerate(staffs)
+                         if self._take_row(i, (rhythmsp, pitchsp, liftsp), samples, symbols[staff],
+                                           alternatives[staff], sureness[staff])]
+                if not going:
+                    break
+                if len(going) < len(staffs):
+                    keep = torch.tensor(going, device=device)
+                    samples = tuple(s.index_select(0, keep) for s in samples)
+                    cache = [c.index_select(0, keep) for c in cache]
+                    mask = mask.index_select(0, keep)
+                    context_later = context_later.index_select(0, keep)
+                    staffs = [staffs[i] for i in going]
+                x_rhythm, x_pitch, x_lift, x_articulations = samples[0], samples[1], samples[2], samples[3]
+                mask = F.pad(mask, (0, 1), value=True)
+        for staff in range(rows):
+            self._score(symbols[staff], alternatives[staff], sureness[staff])
         self.net.train(was_training)
         return symbols
 

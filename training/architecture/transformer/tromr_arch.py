@@ -57,6 +57,12 @@ class TrOMR(nn.Module):
 
         return out
 
+    @torch.no_grad()
+    def generate_batch(self, xs: list[torch.Tensor]) -> list[list[EncodedSymbol]]:
+        """generate for several staff images (each (1, channels, height, width)), read together; each reading is
+        the one generate gives that image alone. The encoder reads each image on its own."""
+        return self.decoder.generate_batch([self.encoder(x) for x in xs])
+
     def freeze_decoder(self) -> None:
         """Freeze all decoder parameters to prevent updates during training."""
         for param in self.decoder.parameters():
