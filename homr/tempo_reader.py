@@ -10,6 +10,7 @@ read_tempo_marks(gray_page, staff_boxes) -> [TempoMark]; the weights come from O
 readers that vote, training/architecture/tempo/tempo_okuyucu_1.pt|_2.pt|_3.pt) and OMR_TEMPO_ARALIK_MODEL (the
 range reader, tempo_okuyucu_aralik.pt); without them no tempo is read.
 """
+import hashlib
 import os
 from dataclasses import dataclass
 
@@ -176,29 +177,39 @@ def valid(seq: list[str]) -> bool:
 
 
 _models: dict[str, TempoReader] = {}
+_by_content: dict[str, TempoReader] = {}  # one model per weights file's content, whatever its name
 
 
 def _load(path: str) -> TempoReader | None:
+    """The reader of a weights file. Two files with the same weights (the range reader is one of the three voters,
+    tempo_okuyucu_aralik.pt = tempo_okuyucu_3.pt) give the same model, which reads each crop once."""
     if path not in _models and os.path.exists(path):
-        model = TempoReader()
-        model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
-        _models[path] = model.eval()
+        with open(path, "rb") as f:
+            content = hashlib.sha256(f.read()).hexdigest()
+        if content not in _by_content:
+            model = TempoReader()
+            model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+            _by_content[content] = model.eval()
+        _models[path] = _by_content[content]
     return _models.get(path)
 
 
+Readings = list[tuple[list[str], float]]
+
+
 def _reader(spec: str):  # noqa: ANN202
-    """The reader for one or more weights ('a.pt|b.pt|c.pt'): crops -> [(tokens, confidence)]. With several, a
-    crop's reading is the one most of them give (as a mark, at MIN_CONFIDENCE or more; confidence their mean),
-    or nothing."""
+    """The reader for one or more weights ('a.pt|b.pt|c.pt'): run -> [(tokens, confidence)], where run(model) is
+    that model's reading of the crops. With several, a crop's reading is the one most of them give (as a mark, at
+    MIN_CONFIDENCE or more; confidence their mean), or nothing."""
     models = [m for m in (_load(path) for path in spec.split("|")) if m is not None]
     if not models:
         return None
     if len(models) == 1:
-        return lambda x: decode(models[0](x))
+        return lambda run: run(models[0])
 
-    def vote(x: torch.Tensor) -> list[tuple[list[str], float]]:
+    def vote(run) -> Readings:  # noqa: ANN001
         out = []
-        for readings in zip(*(decode(m(x)) for m in models), strict=True):
+        for readings in zip(*(run(m) for m in models), strict=True):
             marks = [(tuple(seq), c) for seq, c in readings if valid(seq) and c >= MIN_CONFIDENCE]
             counts: dict[tuple, list[float]] = {}
             for seq, c in marks:
@@ -230,9 +241,16 @@ def read_tempo_marks(gray: np.ndarray, staffs: list[tuple[int, int, int, int]]) 
         if not boxes:
             continue
         crops = to_tensor([crop(gray, b, height) for b in boxes])
-        readings = model(crops)
+        read: dict[int, Readings] = {}  # a model's reading of these crops, read once
+
+        def run(m: TempoReader, crops: torch.Tensor = crops, read: dict = read) -> Readings:
+            if id(m) not in read:
+                read[id(m)] = decode(m(crops))
+            return read[id(m)]
+
+        readings = model(run)
         if range_model is not None:
-            readings = [s if _is_range(*s) else r for r, s in zip(readings, range_model(crops), strict=True)]
+            readings = [s if _is_range(*s) else r for r, s in zip(readings, range_model(run), strict=True)]
         for box, (seq, confidence) in zip(boxes, readings, strict=True):
             if not valid(seq) or confidence < MIN_CONFIDENCE:
                 continue
