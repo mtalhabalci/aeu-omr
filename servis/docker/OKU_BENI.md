@@ -126,11 +126,14 @@ Docker'sız, 4 iş parçacığı, 10 eser (20 sayfa) ve 6 çok porteli sistem re
 | | Toplam | Sayfa/saat | Tepe bellek |
 |---|---:|---:|---:|
 | Önceki kod | 362 sn | 199 | 4,33 GB |
-| `OMR_TOPLU_PORTE=4` | 276 sn | 260 | 4,08 GB |
-| `OMR_TOPLU_PORTE=8` | 270 sn | 267 | 4,11 GB |
+| `OMR_TOPLU_PORTE=4` | 275 sn | 262 | 2,68 GB |
+| `OMR_TOPLU_PORTE=8` | 257 sn | 280 | 2,75 GB |
 
 Ayrıntı ve okumaların aynılık sınavı: `servis/OKU_BENI.md`, "Süre".
 
-- **Bellek uyarısı:** 9 porteli bir çok sesli sistem resmi (1858×1358) masaüstünde süreci 4,3 GB'a çıkardı.
-  Bu, önceki kodda da böyle; masaüstü ölçümü sunucudakinden yüksek çıkar (1 sayfada 2,1 GB'a karşı 1,58 GB). Büyük
-  çok sesli sayfalarda konteynerin belleği izlenmeli, 4 GB sınır dar kalabilir.
+- **Bellek:** Önceki kodda 9 porteli bir çok sesli sistem resmi (1858×1358) masaüstünde süreci 4,3 GB'a
+  çıkarıyordu: parti adı şeridi OCR'a 16 kat büyüyerek giriyordu (+2,1 GB). Şerit artık sayfa ölçeğinde okunuyor;
+  aynı sette tepe 2,7 GB. Masaüstü ölçümü sunucudakinden yüksek çıkar (1 sayfada 2,1 GB'a karşı 1,58 GB).
+- **Okumalar sıraya bağlı değil:** 247 girdi tek süreçte düz ve ters sırayla bayt bayt aynı. Önceden aynı eser,
+  süreç daha önce başka eserler okuduysa bir porte eksik okunabiliyordu (Atkoşar 1416: 10 porte, taze 11).
+  Bu düzeltmeden önce okunmuş eserler yeniden okunmalı.

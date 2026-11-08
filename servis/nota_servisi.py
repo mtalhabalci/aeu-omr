@@ -121,7 +121,7 @@ COKSES_B = os.environ.get("OMR_COKSES_B") == "1"
 MAKAM_READER, BASE_READER = "v24", "temel"
 # the staffs of a page read together, at most this many at a time (each reads as it reads alone, bit for bit:
 # training/architecture/transformer/exact_batch.py); 0 or 1: one at a time. With 4, 20 pages and 6 systems were
-# read in 276 s (one at a time, 337 s), at a lower peak: 4.08 GB, 4.37 GB (CPU, 4 threads; servis/OKU_BENI.md).
+# read in 275 s (one at a time, 324 s), at a lower peak: 2.68 GB, 2.88 GB (CPU, 4 threads; servis/OKU_BENI.md).
 STAFFS_TOGETHER = int(os.environ.get("OMR_TOPLU_PORTE", "0") or 0)
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]

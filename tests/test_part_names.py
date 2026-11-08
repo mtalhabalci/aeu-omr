@@ -6,7 +6,7 @@ import numpy as np
 from homr import baslik_okuyucu
 from homr.baslik_okuyucu import Item
 from homr.model import MultiStaff, Staff, StaffPoint
-from homr.part_names import read_part_names
+from homr.part_names import _at_page_scale, read_part_names
 
 SPACE = 16
 
@@ -36,3 +36,13 @@ class TestPartNames(unittest.TestCase):
         items = [Item("si", [10, 20, 30, 40], 0.78), Item("{", [100, 220, 110, 300], 0.99),
                  Item("12", [10, 420, 30, 440], 0.99)]
         self.assertEqual(self._read(items, [[0], [1], [2]]), [None, None, None])
+
+    def test_a_narrow_strip_is_read_at_the_page_scale(self) -> None:
+        strip = np.full((1311, 46, 3), 230, np.uint8)
+        strip[600:620, 5:40] = 0  # a word
+        canvas = _at_page_scale(strip)
+        self.assertEqual(canvas.shape, (1311, 736, 3))
+        np.testing.assert_array_equal(canvas[:, 736 - 46 :], strip)  # at the top right: the y of the boxes stays
+        self.assertTrue((canvas[:, : 736 - 46] == 230).all())  # the paper's tone
+        wide = np.full((800, 900, 3), 255, np.uint8)
+        self.assertIs(_at_page_scale(wide), wide)

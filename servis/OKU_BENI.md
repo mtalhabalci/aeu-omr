@@ -111,6 +111,8 @@ köşeli parantez düz ve kalın bir çubuktur, uçları dış çizgileri aşar;
   susuyla tamamlanır. Böylece yanlış okunan bir ölçü çizgisi parçaları yalnız kendi sisteminde kaydırır.
 - Sistemin solunda porte adı yazılıysa (Soprano, Piano, S, A …) OCR ile okunur ve `<part-name>` olur. Adın
   okunduğu ilk sistem geçer. Okunamazsa ad eskisi gibi `Voice` (tek porte) ya da `Piano` (iki porte) kalır.
+  Dar şerit OCR'a sayfa ölçeğinde girer (kâğıt tonunda bir tuvalde). Tek başına bir harf bazen okunmaz: "A"yı
+  OCR her ölçekte zaman zaman "4" okur ya da hiç görmez.
 - Alt portenin sesleri 5-8 numaralıdır (homr'un düzeni: porte başına 4 ses). Parçalar arası ölçü numaraları
   aynıdır.
 
@@ -263,16 +265,22 @@ Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün 
 | | Toplam | Porte okuma | Sayfa/saat | Tepe bellek |
 |---|---:|---:|---:|---:|
 | Önceki kod | 362 sn | 171 sn | 199 | 4,33 GB |
-| `OMR_TOPLU_PORTE=0` | 337 sn | 163 sn | 214 | 4,37 GB |
-| `OMR_TOPLU_PORTE=4` | 276 sn | 101 sn | 260 | 4,08 GB |
-| `OMR_TOPLU_PORTE=8` | 270 sn | 94 sn | 267 | 4,11 GB |
+| `OMR_TOPLU_PORTE=0` | 324 sn | 164 sn | 222 | 2,88 GB |
+| `OMR_TOPLU_PORTE=4` | 275 sn | 106 sn | 262 | 2,68 GB |
+| `OMR_TOPLU_PORTE=8` | 257 sn | 96 sn | 280 | 2,75 GB |
 
 - Kapalıyken de ~%7 hızlı: tempo okuyucusu bir şeridin kesitlerini her modelden bir kez geçirir (aralık modeli
   üçüncü modelle aynı dosyaydı, iki kez okunuyordu).
 - Toplu okumada tepe bellek düşer: çapraz dikkatin önbelleği her adımda kopyalanmaz.
 - Okumaların aynı olduğu 240 girdide (150 eser, 200 sayfa, 1.630 porte; 90 çok porteli sistem, 299 porte) önceki
   kodla bayt bayt karşılaştırıldı: `4` ve `8` ile 240/240, kapalıyken 60/60 aynı (MusicXML ve yanıt, `sureMs` hariç).
-- Tepe belleği 9 porteli bir sistem resmi (1858×1358) çıkarıyor; önceki kodda da 4,3 GB.
+- Önceki kodda tepeyi 9 porteli bir sistem resmi (1858×1358) çıkarıyordu: soldaki parti adı şeridi (46×1311) OCR'a
+  16 kat büyüyerek giriyordu (9,7 sn, +2,1 GB). Şerit artık sayfa ölçeğinde okunuyor (`homr/part_names.py`); tepe
+  bir Mus2 sayfasından geliyor. 428 çok porteli sistemde parti adı okuması toplam 507 sn'den 56 sn'ye, tepesi
+  2,84 GB'tan 181 MB'a indi. Bu değişiklikle 240 girdinin 26'sında parti adları değişti; nota ve porte aynı.
+- Okuma, sürecin önce ne okuduğuna bağlı değil: 247 girdi (240 ve 7 Atkoşar eseri) tek süreçte düz ve ters sırayla
+  bayt bayt aynı. Önceden nota başı sayılan birkaç piksellik bir leke her okumada başka bir elips alabiliyor,
+  bir ölçü çizgisini örtüp porte düşürebiliyordu (`homr/bounding_boxes.py`).
 
 ## Örnekler
 

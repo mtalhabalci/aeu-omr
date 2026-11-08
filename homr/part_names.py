@@ -16,6 +16,23 @@ _MARGIN = 1.0  # staff spaces above and below a part's staffs that its name may 
 _GAP = 0.25  # staff spaces left of the staffs' start where the margin ends
 _MAX_LENGTH = 30
 _MIN_SCORE = 0.85  # "Piano", "S", "A" read at 0.96-1.0; a stray "3." came out "si" at 0.78
+_OCR_SIDE = 736  # RapidOCR's text detector enlarges an image whose shorter side is under this to it
+
+
+def _at_page_scale(strip: NDArray) -> NDArray:
+    """The strip on a canvas at least _OCR_SIDE pixels each way, in the tone of its paper, the strip at the top
+    right. Alone, a margin strip goes through the text detector enlarged until its width is _OCR_SIDE: one 46 pixels
+    wide and 1,311 high (a system of nine staffs) went through 16 times larger, ~21,000 pixels high, in 9.7 s and
+    2.1 GB, for two words. On the canvas its text is read at the page's scale. The boxes keep their y; their x moves
+    by the canvas's left part, and the words of a name keep their order."""
+    height, width = strip.shape[:2]
+    if min(height, width) >= _OCR_SIDE:
+        return strip
+    paper = np.median(strip.reshape(-1, strip.shape[2]), axis=0).astype(np.uint8)
+    canvas = np.empty((max(height, _OCR_SIDE), max(width, _OCR_SIDE), strip.shape[2]), np.uint8)
+    canvas[:] = paper
+    canvas[:height, canvas.shape[1] - width :] = strip
+    return canvas
 
 
 def _clean(text: str) -> str | None:
@@ -41,7 +58,7 @@ def read_part_names(image: NDArray, system: MultiStaff, slots: list[list[int]]) 
     if strip.ndim == 2:
         strip = cv2.cvtColor(strip, cv2.COLOR_GRAY2BGR)
     words: list[list[tuple[float, str]]] = [[] for _ in slots]
-    for item in ocr_items(strip):
+    for item in ocr_items(_at_page_scale(strip)):
         text = _clean(item.text)
         if text is None or item.score < _MIN_SCORE:
             continue
