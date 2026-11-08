@@ -25,6 +25,7 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
 | `OMR_COKSES_B` | kapalı | `1`: akor ve ikinci ses yazılır, tek porteli sistemler de iki modelle okunur (aşağıda "Çok seslilik") |
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur; `0`/`1`: tek tek. Her porte tek başına okunduğu gibi okunur, notalar ve güvenler son bitine kadar aynı (`training/architecture/transformer/exact_batch.py`). Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz (aşağıda "Süre") |
 | `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz. `baslikBilgisi` uyarısız `null` döner; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul olmaz. Künyesi katalogdan gelen toplu okuma içindir: eser başına ~1 sn kazandırır. Gerisi başlık okunduğundaki gibidir, bayt bayt (aşağıda "Süre") |
+| `OMR_BELLEK_BIRAK` | kapalı | `1`: her okumadan sonra glibc'nin `malloc_trim(0)`'ı boştaki belleği sisteme geri verir. Yalnız Linux'ta çalışır, başka yerde bir şey yapmaz; okumayı değiştirmez (aşağıda "Süre") |
 
 ## Uç noktalar
 
@@ -285,6 +286,13 @@ Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün 
 - `OMR_BASLIK_OKU=0` (aynı set, `OMR_TOPLU_PORTE=4`, art arda): 263 sn → 251 sn. Eser başına 0,4–1,4 sn, sistem
   resmi başına ~0,6 sn kazanç; tepe bellek aynı. Başlık bilgisi eserin portesi olan ilk sayfasında bir kez okunur.
   247 girdide başlık dışında her şey (MusicXML ve yanıt) başlık okunduğundaki gibi, bayt bayt.
+- Uzun süren süreçte bellek (tek süreç, `OMR_TOPLU_PORTE=4`). 40 farklı eser okundu: süreç belleği (private)
+  2,25 GB'tan ilk ~20 eserde 2,90 GB'a çıktı, sonraki 20 eserde 2,91–2,94 GB'ta kaldı. 7 eser 4 tur okununca da
+  aynı: 2,9–3,0 GB'ta duruyor. Python'un kendi belleği (tracemalloc, numpy dahil) ilk okumadan sonra 1,4 MB'ta sabit.
+  Okuma başına biriken bir şey yok. Linux'ta ise bir toplu okuma süreci ~25 eserde 1,6 GB'tan 3,4 GB'a çıktı:
+  glibc, okumanın iş parçacıklarının bıraktığı belleği kendi arenalarında tutuyor. `OMR_BELLEK_BIRAK=1` bunu her
+  okumadan sonra geri verir. glibc 2.31'de (WSL) dört iş parçacığının bıraktığı 1.282 MB, `malloc_trim(0)` ile
+  63 MB'a indi; `MALLOC_ARENA_MAX=2` tek başına yalnız 1.028 MB'a indirdi. Sunucudaki etkisi henüz ölçülmedi.
 
 ## Örnekler
 

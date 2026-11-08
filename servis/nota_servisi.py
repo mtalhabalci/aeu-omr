@@ -57,9 +57,11 @@ Talha 24.10), each written as a <software> of its own.
 Environment: OMR_MODEL (weights), OMR_TEMEL_MODEL (the base model's weights; without them every staff is read by
 the makam model), OMR_COKSES_B=1 (chords and second voices), OMR_MODEL_SURUM (reported version), OMR_YAZILIM
 (<software> names, separated by ";"), OMR_ANAHTAR, OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU,
-OMR_TOPLU_PORTE (staffs read together), OMR_BASLIK_OKU=0 (the title block not read).
+OMR_TOPLU_PORTE (staffs read together), OMR_BASLIK_OKU=0 (the title block not read), OMR_BELLEK_BIRAK=1 (on Linux
+the C allocator's free memory given back after each reading).
 """
 
+import ctypes
 import os
 import re
 import sys
@@ -128,6 +130,10 @@ STAFFS_TOGETHER = int(os.environ.get("OMR_TOPLU_PORTE", "0") or 0)
 # 0: the title block is not read (baslikBilgisi null without a warning, no title, composer, lyricist, makam, form or
 # usul in the MusicXML), for a library whose titles come from its catalogue: ~1 s less a work (servis/OKU_BENI.md)
 READ_HEADER = os.environ.get("OMR_BASLIK_OKU", "1") != "0"
+# 1: after each reading glibc's malloc_trim(0) gives the memory its arenas hold free back to the system (Linux only;
+# elsewhere nothing). A batch process on Linux grew 1.6 -> 3.4 GB in ~25 works; the same reading levels off at ~2.9 GB
+# on Windows over 40 different works, with Python's own memory flat: glibc keeps what the reading's threads freed
+RELEASE_MEMORY = os.environ.get("OMR_BELLEK_BIRAK") == "1"
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -138,6 +144,16 @@ TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "appl
 XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
 # the answer's format: 2 adds yanitSurumu and cokSesli (the app checks it before reading what version 2 adds)
 ANSWER_VERSION = 2
+
+
+def release_memory() -> None:
+    """glibc's malloc_trim(0): the free memory of every arena back to the system. Nothing without glibc."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):  # no glibc (musl): nothing to give back this way
+        pass
 
 
 def _no_title(*_: object) -> Future:
@@ -387,7 +403,15 @@ class Reader:
     def read(self, path: str, pages: list[int] | None = None, progress=None,
              cancel: threading.Event | None = None) -> dict:
         """Read the given 1-based pages of a PDF (all when None; an image is page 1). progress(pages_done, staffs)
-        is called after each page; cancel, when set, stops the reading before the next staff."""
+        is called after each page; cancel, when set, stops the reading before the next staff. With
+        OMR_BELLEK_BIRAK=1 the C allocator then gives back the memory it holds free."""
+        try:
+            return self._read(path, pages, progress, cancel)
+        finally:
+            if RELEASE_MEMORY:
+                release_memory()
+
+    def _read(self, path: str, pages: list[int] | None, progress, cancel: threading.Event | None) -> dict:
         start = time.perf_counter()
         warnings: list[str] = []
         staffs = 0
