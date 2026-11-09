@@ -26,6 +26,7 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur; `0`/`1`: tek tek. Her porte tek başına okunduğu gibi okunur, notalar ve güvenler son bitine kadar aynı (`training/architecture/transformer/exact_batch.py`). Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz (aşağıda "Süre") |
 | `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz. `baslikBilgisi` uyarısız `null` döner; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul olmaz. Künyesi katalogdan gelen toplu okuma içindir: eser başına ~1 sn kazandırır. Gerisi başlık okunduğundaki gibidir, bayt bayt (aşağıda "Süre") |
 | `OMR_BELLEK_BIRAK` | kapalı | `1`: her okumadan sonra glibc'nin `malloc_trim(0)`'ı boştaki belleği sisteme geri verir. Yalnız Linux'ta çalışır, başka yerde bir şey yapmaz; okumayı değiştirmez (aşağıda "Süre") |
+| `OMR_VOLTA_ONAR` | `1` | `0`: voltalar okunduğu gibi yazılır. Varsayılan: başı okunamamış voltanın başı konur, hiç kapanmayan 3. volta ile önündeki tekrar yazılmaz, başıboş volta kapanışı atılır; ilk ikisi `uyarilar`'a yazılır. Notalar, süreler ve ölçüler değişmez (aşağıda "MusicXML yapısı") |
 
 ## Uç noktalar
 
@@ -78,6 +79,18 @@ uzunsa, kısa olmaları ön vuruş olabilir); aynı numaralar `sureyiTutmayanOlc
 - Notasız ölçü yazılmaz; ölçüler 1'den boşluksuz numaralanır.
 - İleri tekrar ölçünün `left` barline'ında, geri tekrar `right`'ta. Volta numaraları sırayla (1, 2); bitişi
   okunmamış birinci volta geri tekrarda, açık kalan son volta son ölçüde (`discontinue`) kapanır.
+- Voltalar yazılmadan önce onarılır (`homr/volta_mend.py`; `OMR_VOLTA_ONAR=0` kapatır). Açık volta yokken bir
+  ölçü çizgisinin ya da geri tekrarın hemen ardından gelen volta kapanışı, başı okunmamış bir voltanındır: o
+  çizginin kapattığı ölçü volta olur (sayfalarda bu voltaların çoğu tek ölçü; başı en çok porte başında ya da
+  numara yerine "MEYÂN'A", "KARAR" yazılı parantezlerde kaçıyor). Hiç kapanmayan bir 3. volta ve 2. voltanın
+  sonundaki geri tekrar yazılmaz. Başka bir başıboş kapanış atılır; notadan sonra geldiyse ölçü çizgisi olur.
+  `uyarilar`'a "Porte 7: bir voltanın başı okunamadı; parantezin bittiği ölçü volta sayıldı. Volta daha uzunsa
+  kontrol edilmeli." ya da "Porte 9: hiç kapanmayan bir 3. volta okundu; …" yazılır. Notalar, süreler ve ölçü
+  numaraları değişmez; atılan bir işaretin güveni artık ölçünün güvenine sayılmaz.
+  Atkoşar el yazısı sınavında (230 eser) eski okumada 54 eserin ilk voltası 1 değildi ve 69 eserde hiç başlamamış
+  bir volta kapanıyordu; ikisi de 0'a indi. 77 eserin voltaları değişti. Değişen 123 yer kör olarak sayfayla
+  karşılaştırıldı: onarılmış okuma 113'ünde sayfaya daha yakın (78'inde tam uyuyor), 5'inde eskisi daha yakın
+  (sayfada parantez olmayan bir çift çizgiye tek ölçülük volta), 5'i eşit ya da belirsiz.
 - `location="middle"` barline yazılmaz. Süsleme (çarpma) notaları `<grace/>` ile gelir.
 - Arıza adları SMuFL özniteliğiyle: AEU (`accidentalKomaFlat` …) ve THM 2/3 koma (`accidental2CommaSharp`,
   `accidental3CommaSharp`, `accidental2CommaFlat`, `accidental3CommaFlat`).

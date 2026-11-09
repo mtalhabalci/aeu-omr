@@ -58,7 +58,7 @@ Environment: OMR_MODEL (weights), OMR_TEMEL_MODEL (the base model's weights; wit
 the makam model), OMR_COKSES_B=1 (chords and second voices), OMR_MODEL_SURUM (reported version), OMR_YAZILIM
 (<software> names, separated by ";"), OMR_ANAHTAR, OMR_PORT, OMR_GPU_SEGMENTASYON=1 to run staff finding on the GPU,
 OMR_TOPLU_PORTE (staffs read together), OMR_BASLIK_OKU=0 (the title block not read), OMR_BELLEK_BIRAK=1 (on Linux
-the C allocator's free memory given back after each reading).
+the C allocator's free memory given back after each reading), OMR_VOLTA_ONAR=0 (endings written as read).
 """
 
 import ctypes
@@ -105,6 +105,7 @@ from homr.staff_parsing import prepare_staff_image
 from homr.staff_regions import StaffRegions
 from homr.tempo_reader import read_tempo_marks
 from homr.usul_meter import bar_of, meter_of
+from homr.volta_mend import mend_voltas
 from homr.transformer.configs import Config
 from homr.transformer.vocabulary import EncodedSymbol
 from training.architecture.transformer.tromr_arch import load_model
@@ -134,6 +135,9 @@ READ_HEADER = os.environ.get("OMR_BASLIK_OKU", "1") != "0"
 # elsewhere nothing). A batch process on Linux grew 1.6 -> 3.4 GB in ~25 works; the same reading levels off at ~2.9 GB
 # on Windows over 40 different works, with Python's own memory flat: glibc keeps what the reading's threads freed
 RELEASE_MEMORY = os.environ.get("OMR_BELLEK_BIRAK") == "1"
+# 0: the endings are written as read. By default homr.volta_mend puts back an ending's missed start, leaves out a
+# third ending that never closes (and the repeat before it) and a stray closing (servis/OKU_BENI.md)
+MEND_VOLTAS = os.environ.get("OMR_VOLTA_ONAR", "1") != "0"
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -537,10 +541,14 @@ class Reader:
                 voice: list[EncodedSymbol] = []
                 for reading in readings:
                     voice += reading.symbols + [EncodedSymbol("newline")]
+                if MEND_VOLTAS:
+                    voice, mended = mend_voltas(voice)
+                    volta_mended[:] = mended
                 # built as text, not written to a file: the library writes files in the system's code page, which
                 # would garble the title block's Turkish letters on Windows
                 return XML_DECLARATION + generate_xml(args, [voice], "").to_string(), confidence, staff_measures
 
+            volta_mended: list[tuple[int, str]] = []
             musicxml, confidence, staff_measures = write({})
             tempos = tempo_measures(tempo_found, staff_boxes, staff_measures)
             if tempos:
@@ -557,6 +565,14 @@ class Reader:
         off = measures_off_meter(musicxml)
         if off:
             warnings.append(f"Ölçü {', '.join(map(str, off))}: süreler ölçü işaretini tutmuyor; kontrol edilmeli.")
+        started = sorted({staff for staff, what in volta_mended if what == "baslangic"})
+        if started:
+            warnings.append(f"Porte {numbered(started)}: bir voltanın başı okunamadı; parantezin bittiği ölçü volta "
+                            "sayıldı. Volta daha uzunsa kontrol edilmeli.")
+        third = sorted({staff for staff, what in volta_mended if what == "ucuncu"})
+        if third:
+            warnings.append(f"Porte {numbered(third)}: hiç kapanmayan bir 3. volta okundu; yazılmadı, 2. voltanın "
+                            "sonundaki tekrar da kaldırıldı. Kontrol edilmeli.")
         if base_read:
             warnings.append(f"Porte {numbered(base_read)}: çok sesli okuyucuyla okundu (akor, ikinci porte ya da sol "
                             "anahtarı dışında bir anahtar gördü). Bu okuyucu AEU arızalarını tanımaz; bu portelerin "

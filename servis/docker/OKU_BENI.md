@@ -90,6 +90,7 @@ adresinden indirilir (sağlama toplamıyla). Çalışan konteyner model indirmez
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur (`0`/`1`: tek tek); okuma tek tek okumayla son bitine kadar aynı. Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz |
 | `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz (`baslikBilgisi` uyarısız `null`; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul yok); eser başına ~1 sn kazanç. Künyesi katalogdan gelen toplu okuma için |
 | `OMR_BELLEK_BIRAK` | `0` | `1`: her okumadan sonra glibc `malloc_trim(0)` ile boştaki belleği sisteme geri verir; uzun süren süreçte belleğin büyümesine karşı. Okumayı değiştirmez. Önerilen `1` (sunucuda ~80 eserde 1,6–2,3 GB, hız aynı) |
+| `OMR_VOLTA_ONAR` | `1` | `0`: voltalar okunduğu gibi yazılır. Varsayılan: başı okunamamış voltanın başı konur, hiç kapanmayan 3. volta ile önündeki tekrar yazılmaz, başıboş volta kapanışı atılır (ayrıntı ve ölçüm ana `servis/OKU_BENI.md`'de). Notalar ve süreler değişmez |
 | `OMP_NUM_THREADS`, `MKL_NUM_THREADS` | `4` | modelin kullandığı iş parçacığı; `cpus` sınırıyla aynı tutun |
 
 ## Eşzamanlılık ve zaman aşımı
