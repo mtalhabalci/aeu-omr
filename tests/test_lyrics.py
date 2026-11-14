@@ -1,0 +1,59 @@
+from homr.lyrics import StaffLyrics, Word, add_lyrics, staff_lyrics, syllables
+
+
+def test_syllables() -> None:
+    assert syllables("yele") == ["ye", "le"]
+    assert syllables("kaynarsın") == ["kay", "nar", "sın"]
+    assert syllables("Türkçe") == ["Türk", "çe"]
+    assert syllables("saat") == ["sa", "at"]
+    assert syllables("n'olur") == ["n'o", "lur"]
+    assert syllables("Câ") == ["Câ"]
+
+
+def _note(step: str, octave: int, extra: str = "") -> str:
+    return (f"<note>{extra}<pitch><step>{step}</step><octave>{octave}</octave></pitch><duration>4</duration>"
+            "<voice>1</voice><type>quarter</type><staff>1</staff><notations /></note>")
+
+
+def _score(*measures: list[str]) -> str:
+    body = "".join(f'<measure number="{n}">{"".join(notes)}</measure>' for n, notes in enumerate(measures, 1))
+    return f'<score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">{body}</part></score-partwise>'
+
+
+def test_lines_verses_and_not_sung() -> None:
+    staff = (100, 100, 900, 140)  # a staff 40 px high
+    words = [Word("Yi", (190, 160, 210, 172)), Word("ne", (290, 160, 310, 172)),
+             Word("Pür", (190, 176, 215, 188)),  # verse 2, under verse 1
+             Word("ARANAĞMESİ", (400, 160, 520, 172)),  # a section's name
+             Word("v", (600, 160, 606, 172)),  # a sign of the music font
+             Word("Yine bir gülnihal aldı bu gönlümü", (100, 400, 700, 412))]  # far below: the poem
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [[w.text for w in line] for line in lines] == [["Yi", "ne"], ["Pür"]]
+
+
+def test_add_lyrics_to_the_notes_under_them() -> None:
+    # G4 (place 4), B4 (place 6), a rest, A4 (place 5); heads at x 200, 300, -, 500
+    rest = "<note><rest /><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>"
+    xml = _score([_note("G", 4), _note("B", 4)], [rest, _note("A", 4)])
+    heads = [[(200, 4), (300, 6), (500, 5)]]
+    lyrics = [StaffLyrics([[Word("Yi", (190, 160, 210, 172)), Word("ne", (292, 160, 312, 172)),
+                            Word("bir", (488, 160, 512, 172))]])]
+    out, record = add_lyrics(xml, [(1, 2)], heads, lyrics, [(100, 100, 900, 140)])
+    assert [(r["hece"], r["olcu"], r["nota"]) for r in record] == [("Yi", 1, 0), ("ne", 1, 1), ("bir", 2, 1)]
+    assert out.count("<lyric ") == 3
+    assert '<lyric number="1"><syllabic>single</syllabic><text>bir</text></lyric></note>' in out
+    assert "<rest /><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>" in out
+
+
+def test_a_missed_head_shifts_nothing() -> None:
+    xml = _score([_note("G", 4), _note("B", 4), _note("D", 5)])
+    heads = [[(200, 4), (400, 8)]]  # the B's head was not found
+    lyrics = [StaffLyrics([[Word("a", (395, 160, 405, 172))]])]
+    _, record = add_lyrics(xml, [(1, 1)], heads, lyrics, [(100, 100, 900, 140)])
+    assert (record[0]["olcu"], record[0]["nota"]) == (1, 2)  # the D, not the B
+
+
+def test_several_parts_are_left_alone() -> None:
+    xml = '<score-partwise><part-list><score-part id="P1"/><score-part id="P2"/></part-list></score-partwise>'
+    out, record = add_lyrics(xml, [], [], [], [])
+    assert out == xml and record == []

@@ -85,6 +85,7 @@ from homr.autocrop import autocrop_box
 from homr.baslik_okuyucu import prepare as prepare_header_reader
 from homr.baslik_okuyucu import read_header
 from homr.main import ProcessingConfig, detect_staffs_in_image
+from homr.lyrics import StaffLyrics, add_lyrics, lyric_bands, ocr_words, staff_lyrics, text_layer_words
 from homr.makam_key import resolve_western_sounding
 from homr.model import MultiStaff, Staff
 from homr.music_xml_generator import XmlGeneratorArguments, generate_xml
@@ -138,6 +139,11 @@ RELEASE_MEMORY = os.environ.get("OMR_BELLEK_BIRAK") == "1"
 # 0: the endings are written as read. By default homr.volta_mend puts back an ending's missed start, leaves out a
 # third ending that never closes (and the repeat before it) and a stray closing (servis/OKU_BENI.md)
 MEND_VOLTAS = os.environ.get("OMR_VOLTA_ONAR", "1") != "0"
+# lyrics (homr/lyrics.py): the syllables under each staff written to its notes as <lyric>, from a PDF page's text
+# layer or, on a picture, by OCR ("1"); "katman" takes them from the text layer only (no OCR); a score of several
+# parts is left without. Off by default: the answer is as before
+LYRICS = os.environ.get("OMR_SOZ_OKU", "")
+READ_LYRICS = LYRICS in ("1", "katman")
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -352,6 +358,19 @@ class Reader:
             source = "tarama" if scanned(page) else "dijital"
         return image, round(72 * zoom, 2), source
 
+    @staticmethod
+    def _page_lyrics(path: str, page_no: int, dpi: float | None, gray_page, boxes: list[tuple]) -> list[StaffLyrics]:  # noqa: ANN001
+        """The lyric lines under each of a page's staffs: from the PDF page's text layer when it has one with letters,
+        otherwise by OCR in the staffs' lyric bands (not with OMR_SOZ_OKU=katman). A failure leaves the page's staffs
+        without lyrics; the reading goes on."""
+        try:
+            words = text_layer_words(path, page_no, dpi / 72) if dpi and path.endswith(".pdf") else []
+            if not words and LYRICS == "1":
+                words = ocr_words(gray_page, lyric_bands(boxes, gray_page.shape[0]))
+            return staff_lyrics(words, boxes, gray_page.shape[0])
+        except Exception:  # noqa: BLE001
+            return [StaffLyrics() for _ in boxes]
+
     def _read_staff(self, tensor: torch.Tensor, polyphony_possible: bool) -> tuple[list[EncodedSymbol], str]:
         """A staff's symbols and which model read them. Where polyphony is possible the base model reads first, and
         its reading is taken when it shows what the makam model cannot read (score_parts.is_polyphonic: a chord, a
@@ -427,6 +446,8 @@ class Reader:
         readings: list[StaffReading] = []  # every staff read, in the order of staff_boxes
         read_by: list[str] = []  # the model that read each of them
         octave_clefs: dict[int, list[int]] = {-1: [], 1: []}  # staff numbers (from 1) by their clef's 8: under, over
+        heads: list[list[tuple[float, int]]] = []  # each staff's noteheads (x in the page's pixels, place on the staff)
+        lyrics: list[StaffLyrics] = []  # each staff's lyric lines (with READ_LYRICS)
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -491,6 +512,7 @@ class Reader:
                         octave_clefs[octave].append(len(staff_boxes) + 1)
                     readings.append(StaffReading(system_no, place, symbols))
                     read_by.append(by)
+                    heads.append([(box[0] + note.center[0] * scale_x, note.position) for note in staff.get_notes()])
                     staff_boxes.append((page_no, [round(box[0] + staff.min_x * scale_x),
                                                   round(box[1] + staff.min_y * scale_y),
                                                   round(box[0] + staff.max_x * scale_x),
@@ -501,6 +523,9 @@ class Reader:
                 gray_page = cv2.cvtColor(page_pixels, cv2.COLOR_BGR2GRAY)
                 for mark in read_tempo_marks(gray_page, [tuple(b) for _, b in staff_boxes[page_first:]]):
                     tempo_found.append((page_first + mark.staff, mark))
+                if READ_LYRICS:
+                    lyrics += self._page_lyrics(path, page_no, dpi, gray_page,
+                                                [tuple(b) for _, b in staff_boxes[page_first:]])
                 if progress is not None:
                     progress(done + 1, staffs)
             if not staffs:
@@ -557,6 +582,13 @@ class Reader:
                 musicxml, confidence, staff_measures = write(
                     {t["olcu"]: (t["birim"], t["noktali"], t["deger"],
                                  "{}-{}".format(*t["aralik"]) if t["aralik"] else None) for t in tempos})
+            self.lyrics_record = []
+            if READ_LYRICS and plan is None:
+                try:
+                    musicxml, self.lyrics_record = add_lyrics(musicxml, staff_measures, heads, lyrics,
+                                                              [tuple(b) for _, b in staff_boxes])
+                except Exception:  # noqa: BLE001, S110  (the reading stands without its lyrics)
+                    pass
         written = {int(n) for n in re.findall(r'<measure number="(\d+)"', musicxml)}
         measures = [{"olcu": n, "guven": round(c, 3)} for n, c in sorted(confidence.items()) if n in written]
         weak = sum(1 for m in measures if m["guven"] < LOW_CONFIDENCE)
