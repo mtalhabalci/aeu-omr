@@ -26,6 +26,7 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur; `0`/`1`: tek tek. Her porte tek başına okunduğu gibi okunur, notalar ve güvenler son bitine kadar aynı (`training/architecture/transformer/exact_batch.py`). Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz (aşağıda "Süre") |
 | `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz. `baslikBilgisi` uyarısız `null` döner; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul olmaz. Künyesi katalogdan gelen toplu okuma içindir: eser başına ~1 sn kazandırır. Gerisi başlık okunduğundaki gibidir, bayt bayt (aşağıda "Süre") |
 | `OMR_BELLEK_BIRAK` | kapalı | `1`: her okumadan sonra glibc'nin `malloc_trim(0)`'ı boştaki belleği sisteme geri verir. Yalnız Linux'ta çalışır, başka yerde bir şey yapmaz; okumayı değiştirmez (aşağıda "Süre") |
+| `OMR_SOZ_OKU` | kapalı | `katman`: dijital PDF sayfalarının (notası çizim olarak basılmış, `kaynak: dijital`) metin katmanındaki sözler, altında durdukları notalara MusicXML `<lyric number="kıta">` olarak yazılır (`syllabic` hep `single`: baskılarda heceler arasında tire yok). `1`: metin katmanı olmayan sayfalarda (tarama, fotoğraf) sözler OCR'la okunur (RapidOCR latin tanıyıcısı; imajda yok, ölçüsü yetersiz, açılmadı). Çok partili eserler sözsüz kalır; söz adımı hata verirse okuma sözsüz sürer. Kapalıyken cevap bayt bayt aynıdır (aşağıda "Sözler") |
 | `OMR_VOLTA_ONAR` | `1` | `0`: voltalar okunduğu gibi yazılır. Varsayılan: başı okunamamış voltanın başı konur, hiç kapanmayan 3. volta ile önündeki tekrar yazılmaz, başıboş volta kapanışı atılır; ilk ikisi `uyarilar`'a yazılır. Notalar, süreler ve ölçüler değişmez (aşağıda "MusicXML yapısı") |
 
 ## Uç noktalar
@@ -314,3 +315,41 @@ Sistemin üst portesinin üstünde 8 aranmaz. Orada sistemin ilk ölçüsünün 
 
 `servis/ornekler/`: aynı servisin okuduğu üç sayfa (Mus2 basılı hicaz, Erdinç Bal dizgi, Erdinç Bal el yazısı;
 hiçbiri eğitimde yok), MusicXML ve yanıtın geri kalanı (`.json`). `python -m servis.ornek_uret` yeniden üretir.
+
+## Sözler
+
+`OMR_SOZ_OKU` açıkken yanıtta bir de `soz` alanı bulunur. Bayrak kapalıyken bu alan yoktur. Alanın içeriği:
+
+- `kaynak`: sözlerin nereden geldiği. `katman` (PDF'in metin katmanı), `ocr`, `karma` (sayfaların bir kısmı
+  katmandan, bir kısmı OCR'dan) ya da `null` (söz bulunmadı).
+- `heceSayisi`: notalara yazılan hece sayısı.
+- `bagsizHece`: okunduğu hâlde hiçbir notanın almadığı, bu yüzden yazılmayan hece sayısı.
+- `kitaSayisi`: bir portenin altındaki en çok kıta sayısı.
+- `sozluPorte`: sözü olan porte sayısı.
+- `ortalamaGuven`: hecelerin ortalama tanıma puanı. Metin katmanında 1'dir.
+- `guven`: `ortalamaGuven` × yazılan hecelerin payı. Söz yoksa `null`.
+- `yazilmadi`: söz bulunduğu hâlde yazılmadıysa nedeni: `cok_partili`, `sol_anahtari_degil` ya da `hata`. Yazıldıysa
+  `null`.
+
+Uygulamanın söz eşiği `guven` üzerinden kurulur.
+
+- Metin katmanında `guven` 1'dir (bağsız hece yoksa). Eşik orada bir şeyi değiştirmez.
+- OCR'da `guven` kalibre değildir. Pilotta eser ortalaması 0,85–0,98 çıktı, oysa hakemlerin ölçtüğü metin isabeti
+  %46–98 arasındaydı. İkisinin eser düzeyinde korelasyonu 0,6. Ortalaması 0,86'nın altındaki eserlerde isabet
+  %46–76 kaldı. OCR yolu açılmadan önce eşik yeni bir ölçümle ayarlanmalıdır.
+
+`OMR_SOZ_OKU=katman` ile (14.11.2026 ölçümü):
+
+- Bir portenin söz bandı, porte boyunca altındaki şerittir; aşağıdaki porteye kadar sürer, en çok dört porte boyu olur.
+  Bantta yazılar yüksekliklerine göre satırlara ayrılır ve en üstteki satır 1. kıta sayılır. Şunlar hece sayılmaz:
+  - bölüm, saz ve tempo adları: ARANAĞMESİ, SAZ, MEYAN, Çabuk, Ağır...;
+  - yalnız büyük harfle yazılmış satırlar;
+  - harfleri aralıklı yazılmış yönergeler;
+  - nota yazı tipinin işaretleri (ünlüsüz tek harfler);
+  - sayfa altındaki güfte metni (tam kelimelerden oluşan satırlar).
+- Birden çok heceli bir kelime Türkçe hece kuralıyla bölünür.
+- Her hece, ortasının altındaki notaya bağlanır. Notalar porte bulmanın bulduğu nota başlarıdır; yazılmış notalarla
+  porte üzerindeki yerlerine göre eşlenir. Hece, sus, çarpma ya da bağın ikinci notası hece almaz.
+- Ölçüm: Üsküdar baskısı 10 sözlü eser, 816 hece, 5 hakemli kör kontrol. Hecelerin hepsi doğru notada ve doğru yazılmış
+  (%95 aralık %99,5–100), kaçan hece yok.
+- Ölçülmedi: başka yayınevlerinin vektör PDF'leri (Mus2, MuseScore, Sibelius dışa aktarımları).

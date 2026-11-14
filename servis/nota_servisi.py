@@ -304,6 +304,23 @@ def split_unjoined_systems(systems: list[MultiStaff], groups: dict[int, list]) -
     return result
 
 
+def lyrics_summary(record: list[dict], sources: set[str], left_out: str | None) -> dict:
+    """The answer's 'soz' (with OMR_SOZ_OKU): where the lyrics came from and how much of them could be trusted.
+    kaynak: 'katman' (a PDF's text layer), 'ocr', 'karma' (pages of both), null (none found); heceSayisi: syllables
+    written to notes; bagsizHece: syllables read that no note took (not written); kitaSayisi: the most verses under
+    a staff; sozluPorte: staffs with lyrics; ortalamaGuven: the syllables' mean recognition score (1 for the text
+    layer); guven: ortalamaGuven times the share of syllables written, null without lyrics; yazilmadi: why lyrics
+    found were not written ('cok_partili', 'sol_anahtari_degil', 'hata'), else null."""
+    written = [r for r in record if r["olcu"] is not None]
+    unbound = len(record) - len(written)
+    source = None if not sources else sources.pop() if len(sources) == 1 else "karma"
+    mean = round(sum(r["guven"] for r in written) / len(written), 3) if written else None
+    return {"kaynak": source if written or left_out else None, "heceSayisi": len(written), "bagsizHece": unbound,
+            "kitaSayisi": max((r["kita"] for r in written), default=0),
+            "sozluPorte": len({r["porte"] for r in written}), "ortalamaGuven": mean,
+            "guven": round(mean * len(written) / len(record), 3) if written else None, "yazilmadi": left_out}
+
+
 def numbered(numbers: list[int]) -> str:
     return ", ".join(map(str, numbers))
 
@@ -359,17 +376,23 @@ class Reader:
         return image, round(72 * zoom, 2), source
 
     @staticmethod
-    def _page_lyrics(path: str, page_no: int, dpi: float | None, gray_page, boxes: list[tuple]) -> list[StaffLyrics]:  # noqa: ANN001
-        """The lyric lines under each of a page's staffs: from the PDF page's text layer when it has one with letters,
-        otherwise by OCR in the staffs' lyric bands (not with OMR_SOZ_OKU=katman). A failure leaves the page's staffs
-        without lyrics; the reading goes on."""
+    def _page_lyrics(path: str, page_no: int, dpi: float | None, source: str, gray_page,  # noqa: ANN001
+                     boxes: list[tuple]) -> tuple[list[StaffLyrics], str | None]:
+        """The lyric lines under each of a page's staffs: from the text layer of a PDF page drawn as notation
+        ('dijital') when it has one with letters, otherwise by OCR in the staffs' lyric bands (not with
+        OMR_SOZ_OKU=katman). A scanned page's text layer (an OCR's, hidden under the picture) is not taken. A failure
+        leaves the page's staffs without lyrics; the reading goes on. With the lyrics, where they came from: 'katman',
+        'ocr', or None when the page has none ('hata' when the step failed)."""
         try:
-            words = text_layer_words(path, page_no, dpi / 72) if dpi and path.endswith(".pdf") else []
+            words = text_layer_words(path, page_no, dpi / 72) if dpi and source == "dijital" else []
+            kind = "katman"
             if not words and LYRICS == "1":
                 words = ocr_words(gray_page, lyric_bands(boxes, gray_page.shape[0]))
-            return staff_lyrics(words, boxes, gray_page.shape[0])
+                kind = "ocr"
+            lyrics = staff_lyrics(words, boxes, gray_page.shape[0])
+            return lyrics, kind if any(staff.lines for staff in lyrics) else None
         except Exception:  # noqa: BLE001
-            return [StaffLyrics() for _ in boxes]
+            return [StaffLyrics() for _ in boxes], "hata"
 
     def _read_staff(self, tensor: torch.Tensor, polyphony_possible: bool) -> tuple[list[EncodedSymbol], str]:
         """A staff's symbols and which model read them. Where polyphony is possible the base model reads first, and
@@ -448,6 +471,7 @@ class Reader:
         octave_clefs: dict[int, list[int]] = {-1: [], 1: []}  # staff numbers (from 1) by their clef's 8: under, over
         heads: list[list[tuple[float, int]]] = []  # each staff's noteheads (x in the page's pixels, place on the staff)
         lyrics: list[StaffLyrics] = []  # each staff's lyric lines (with READ_LYRICS)
+        lyric_sources: set[str] = set()  # where the pages' lyrics came from
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -524,8 +548,11 @@ class Reader:
                 for mark in read_tempo_marks(gray_page, [tuple(b) for _, b in staff_boxes[page_first:]]):
                     tempo_found.append((page_first + mark.staff, mark))
                 if READ_LYRICS:
-                    lyrics += self._page_lyrics(path, page_no, dpi, gray_page,
-                                                [tuple(b) for _, b in staff_boxes[page_first:]])
+                    page_lyrics, lyric_source = self._page_lyrics(path, page_no, dpi, source, gray_page,
+                                                                  [tuple(b) for _, b in staff_boxes[page_first:]])
+                    lyrics += page_lyrics
+                    if lyric_source:
+                        lyric_sources.add(lyric_source)
                 if progress is not None:
                     progress(done + 1, staffs)
             if not staffs:
@@ -583,12 +610,20 @@ class Reader:
                     {t["olcu"]: (t["birim"], t["noktali"], t["deger"],
                                  "{}-{}".format(*t["aralik"]) if t["aralik"] else None) for t in tempos})
             self.lyrics_record = []
-            if READ_LYRICS and plan is None:
-                try:
-                    musicxml, self.lyrics_record = add_lyrics(musicxml, staff_measures, heads, lyrics,
-                                                              [tuple(b) for _, b in staff_boxes])
-                except Exception:  # noqa: BLE001, S110  (the reading stands without its lyrics)
-                    pass
+            lyrics_left_out = None  # why lyrics found were not written
+            if READ_LYRICS and any(staff.lines for staff in lyrics):
+                if plan is not None:
+                    lyrics_left_out = "cok_partili"
+                elif re.search(r"<sign>[FC]</sign>", musicxml):
+                    lyrics_left_out = "sol_anahtari_degil"
+                else:
+                    try:
+                        musicxml, self.lyrics_record = add_lyrics(musicxml, staff_measures, heads, lyrics,
+                                                                  [tuple(b) for _, b in staff_boxes])
+                    except Exception:  # noqa: BLE001  (the reading stands without its lyrics)
+                        lyrics_left_out = "hata"
+            if "hata" in lyric_sources and lyrics_left_out is None and not self.lyrics_record:
+                lyrics_left_out = "hata"
         written = {int(n) for n in re.findall(r'<measure number="(\d+)"', musicxml)}
         measures = [{"olcu": n, "guven": round(c, 3)} for n, c in sorted(confidence.items()) if n in written]
         weak = sum(1 for m in measures if m["guven"] < LOW_CONFIDENCE)
@@ -632,12 +667,13 @@ class Reader:
                                # chords or a second voice were cut down to the top line (OMR_COKSES_B off): a
                                # correction of this staff shows the top line only, so it is no full label
                                "ustSesKirpildi": number in cut})
+        answer_extra = {"soz": lyrics_summary(self.lyrics_record, lyric_sources - {"hata"}, lyrics_left_out)}             if READ_LYRICS else {}
         return {"musicxml": musicxml, "modelVersion": MODEL_VERSION, "olcuGuven": measures, "uyarilar": warnings,
                 "sureyiTutmayanOlculer": off,
                 "porteSayisi": staffs, "sayfaSayisi": len(pages), "toplamSayfa": total, "sayfalar": pages,
                 "porteler": staff_list, "sayfaResimleri": page_info, "tempolar": tempos, "baslikBilgisi": header,
                 "sureMs": round((time.perf_counter() - start) * 1000), "yanitSurumu": ANSWER_VERSION,
-                "cokSesli": polyphonic}
+                "cokSesli": polyphonic, **answer_extra}
 
 
 app = FastAPI(title="Nota okuma servisi", docs_url=None, redoc_url=None, openapi_url=None)
