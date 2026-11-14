@@ -32,7 +32,11 @@ import numpy as np
 NOT_SUNG = {
     "aranagme", "aranagmesi", "aranagmeler", "saz", "sazi", "giris", "girissazi", "nakarat", "meyan", "meyana", "son",
     "fine", "teslim", "zemin", "karar", "karara", "tekrar", "hane", "mulazime", "terennum", "dc", "ds", "coda", "segno",
-    "alcoda", "dalsegno", "dacapo", "bis", "ara", "nagme", "nagmesi",
+    "alcoda", "dalsegno", "dacapo", "bis", "ara", "nagme", "nagmesi", "koda", "kodaya", "meyansazi",
+    # tempo words written under or over a staff
+    "agir", "agirca", "agirdan", "cabuk", "cabukca", "orta", "ortaagir", "yavas", "yavasca", "hizli", "yuruk",
+    "sert", "agirlasarak", "hizlanarak", "agirlasir", "serbest", "rubato", "moderato", "andante", "allegro",
+    "adagio", "largo", "lento", "presto", "tempo",
 }
 _FOLD = str.maketrans("çğıİöşüâîûÇĞÖŞÜÂÎÛ", "cgiiosuaiuCGOSUAIU")
 _VOWELS = set("aeıioöuüâîûAEIİOÖUÜÂÎÛ")
@@ -47,10 +51,19 @@ class Word:
     text: str
     box: tuple[float, float, float, float]
     score: float = 1.0
+    left: bool = False  # written from its note (typewriter, hand lettering), not centred under it (typeset)
 
     @property
     def cx(self) -> float:
         return (self.box[0] + self.box[2]) / 2
+
+    @property
+    def anchor(self) -> float:
+        """Where the syllable's note stands: under its middle when typeset, under its first letter when written
+        from the note."""
+        if not self.left:
+            return self.cx
+        return self.box[0] + (self.box[2] - self.box[0]) / max(1, len(self.text)) / 2
 
     @property
     def cy(self) -> float:
@@ -129,7 +142,8 @@ def ocr_words(gray: np.ndarray, bands: list[tuple[int, int, int, int]]) -> list[
         scale = 2.0
         crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         rgb = cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR)
-        result = engine(rgb, return_word_box=True)
+        # lyrics stand upright: the angle classifier only turns some syllables upside down (sun -> uns)
+        result = engine(rgb, use_cls=False, return_word_box=True)
         if result is None or result.boxes is None:
             continue
         for line_words in result.word_results or []:
@@ -141,7 +155,7 @@ def ocr_words(gray: np.ndarray, bands: list[tuple[int, int, int, int]]) -> list[
                 bx1, by1 = points[:, 0].max() + x0, points[:, 1].max() + y0
                 for part, part_box in _split_spaces(text, (bx0, by0, bx1, by1)):
                     if _letters(part):
-                        words.append(Word(part, part_box, float(score)))
+                        words.append(Word(part, part_box, float(score), left=True))
     return words
 
 
@@ -233,7 +247,8 @@ def _split_syllables(word: Word) -> list[Word]:
     x0, y0, x1, y1 = word.box
     for part in parts:
         end = start + len(part)
-        out.append(Word(part, (x0 + (x1 - x0) * start / total, y0, x0 + (x1 - x0) * end / total, y1), word.score))
+        out.append(Word(part, (x0 + (x1 - x0) * start / total, y0, x0 + (x1 - x0) * end / total, y1), word.score,
+                        word.left))
         start = end
     return out
 
@@ -242,6 +257,24 @@ def _poem(line: list[Word]) -> bool:
     """A line of whole words (the poem printed under the score), not of syllables: most of its words long."""
     lengths = [len(_letters(w.text)) for w in line]
     return len(lengths) >= 3 and (float(np.median(lengths)) >= 5 or sum(n >= 7 for n in lengths) * 2 > len(lengths))
+
+
+def _without_spaced_letters(words: list[Word]) -> list[Word]:
+    """Without the letters of a word written letter-spaced (A r a n a ğ m e s i ' n e, K a r a r): three or more
+    one-letter words at about one height, each within a letter's height of the next."""
+    singles = sorted((w for w in words if len(_letters(w.text)) == 1), key=lambda w: (round(w.cy / 4), w.box[0]))
+    drop: set[int] = set()
+    run: list[Word] = []
+    for w in singles:
+        if run and abs(w.cy - run[-1].cy) < 0.5 * w.height and w.box[0] - run[-1].box[2] < 1.2 * w.height:
+            run.append(w)
+        else:
+            if len(run) >= 3:
+                drop |= {id(x) for x in run}
+            run = [w]
+    if len(run) >= 3:
+        drop |= {id(x) for x in run}
+    return [w for w in words if id(w) not in drop]
 
 
 def _sung(word: Word) -> bool:
@@ -259,6 +292,9 @@ def _lines(words: list[Word]) -> list[list[Word]]:
         return []
     words = sorted(words, key=lambda w: w.cy)
     tolerance = 0.6 * float(np.median([w.height for w in words]))
+    words = _without_spaced_letters(words)
+    if not words:
+        return []
     lines: list[list[Word]] = [[words[0]]]
     for word in words[1:]:
         if word.cy - np.mean([w.cy for w in lines[-1]]) > tolerance:
@@ -270,7 +306,7 @@ def _lines(words: list[Word]) -> list[list[Word]]:
         capitals = all(_letters(w.text).isupper() and len(_letters(w.text)) >= 2 for w in line)
         if capitals and not any(_letters(w.text).islower() for w in line):
             continue
-        kept = sorted((Word(_clean(w.text), w.box, w.score) for w in line if _sung(w)), key=lambda w: w.cx)
+        kept = sorted((Word(_clean(w.text), w.box, w.score, w.left) for w in line if _sung(w)), key=lambda w: w.cx)
         kept = [w for w in kept if w.text]
         if kept and _poem(kept):
             break  # the poem under the score; nothing under it is sung either
@@ -359,13 +395,13 @@ def _assign(syllables: list[Word], notes: list[_Note], unit: float) -> list[int 
     if m == 0 or k == 0:
         return [None] * m
     if m > k:  # more syllables than notes: the farthest are left out
-        syllables_kept = sorted(range(m), key=lambda i: min(abs(syllables[i].cx - notes[t].x) for t in takers))[:k]
+        syllables_kept = sorted(range(m), key=lambda i: min(abs(syllables[i].anchor - notes[t].x) for t in takers))[:k]
         result: list[int | None] = [None] * m
         sub = _assign([syllables[i] for i in sorted(syllables_kept)], notes, unit)
         for i, r in zip(sorted(syllables_kept), sub, strict=True):
             result[i] = r
         return result
-    dist = np.array([[abs(s.cx - notes[t].x) / unit for t in takers] for s in syllables])
+    dist = np.array([[abs(s.anchor - notes[t].x) / unit for t in takers] for s in syllables])
     inf = float("inf")
     best = np.full((m, k), inf)
     back = np.zeros((m, k), dtype=int)

@@ -57,3 +57,11 @@ def test_several_parts_are_left_alone() -> None:
     xml = '<score-partwise><part-list><score-part id="P1"/><score-part id="P2"/></part-list></score-partwise>'
     out, record = add_lyrics(xml, [], [], [], [])
     assert out == xml and record == []
+
+
+def test_tempo_words_and_letter_spaced_directions_are_not_sung() -> None:
+    staff = (100, 100, 900, 140)
+    words = [Word("Yi", (190, 160, 210, 172)), Word("Çabuk", (300, 160, 350, 172))]
+    words += [Word(c, (500 + 9 * i, 160, 507 + 9 * i, 172)) for i, c in enumerate("Karar")]
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [[w.text for w in line] for line in lines] == [["Yi"]]
