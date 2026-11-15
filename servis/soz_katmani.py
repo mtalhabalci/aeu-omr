@@ -145,7 +145,11 @@ def main() -> None:
         gid = os.path.basename(f)[:-5]
         target = os.path.join(out, gid + ".json")
         if os.path.exists(target):
-            continue
+            try:
+                if "hata" not in json.load(open(target, encoding="utf-8")):
+                    continue  # done; a work that failed (memory, a broken page) is tried again
+            except ValueError:
+                pass
         folder = os.path.dirname(os.path.dirname(f))
         xml_path, pdf = f[:-5] + ".musicxml", os.path.join(folder, "pdf", gid + ".pdf")
         if not (os.path.exists(xml_path) and os.path.exists(pdf)):
