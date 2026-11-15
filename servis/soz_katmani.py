@@ -9,14 +9,15 @@ as the service gives them, and written as a layer: for each syllable its measure
 recognition score. With each measure that has lyrics, the number of its notes, so that a MusicXML corrected since
 (its notes changed) takes the layer only where the measure's notes are as many as in the reading.
 
-    python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk] [--saat HH:MM-HH:MM]
+    python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk] [--saat HH:MM-HH:MM] [--ters]
 
 A parti folder holds okuma/<id>.json (the service's answer, under 'okuma'), okuma/<id>.musicxml and pdf/<id>.pdf; the
 layer goes to <out>/<id>.json (one already there is left). --parca i/n takes every n-th work from the i-th (from 0),
 for runs side by side. The works of an instrumental form (peşrev, saz semaisi...: the reading's 'form') are left out,
 unless --hepsi. --dusuk runs the process at below-normal priority (Windows), so that the machine stays responsive.
 --saat 00:00-08:00 works only in that window: it waits for its start and stops at its end. --gpu finds the staffs and
-reads the bands on the GPU (onnxruntime-gpu; the segmentation's fp32 model, as no fp16 one is at hand).
+reads the bands on the GPU (onnxruntime-gpu; the segmentation's fp32 model, as no fp16 one is at hand). --ters takes
+the works from the end, so that a run started beside others meets them only at the end.
 """
 
 import glob
@@ -190,6 +191,9 @@ def main() -> None:
         i = args.index("--saat")
         window = tuple(_minutes(x) for x in args[i + 1].split("-"))
         del args[i:i + 2]
+    backwards = "--ters" in args
+    if backwards:
+        args.remove("--ters")
     everything = "--hepsi" in args
     if everything:
         args.remove("--hepsi")
@@ -200,6 +204,8 @@ def main() -> None:
     processing = ProcessingConfig(False, False, False, False, -1, gpu)
     works = sorted(f for folder in folders for f in glob.glob(os.path.join(folder, "okuma", "*.json")))
     works = works[part::parts]
+    if backwards:
+        works.reverse()
     commit = _commit()
     done = 0
     start = time.perf_counter()
