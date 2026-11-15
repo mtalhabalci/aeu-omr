@@ -120,9 +120,12 @@ def _ocr_engine():  # noqa: ANN202
     if _ocr is None:
         from rapidocr import LangRec, ModelType, OCRVersion, RapidOCR  # noqa: PLC0415
 
-        # the latin recogniser exists as PP-OCRv5 mobile (latin_PP-OCRv5_rec_mobile)
+        # the latin recogniser exists as PP-OCRv5 mobile (latin_PP-OCRv5_rec_mobile). The detector is not to enlarge
+        # a band (its default brings the shorter side up to 736 px, a band 4,700 px wide): as good on the Üsküdar
+        # pages read as pictures (83.8 % of the text layer's syllables against 84.3), 2.7 times as fast on Atkoşar's
         _ocr = RapidOCR(params={"Global.log_level": "warning", "Rec.lang_type": LangRec.LATIN,
-                                "Rec.ocr_version": OCRVersion.PPOCRV5, "Rec.model_type": ModelType.MOBILE})
+                                "Rec.ocr_version": OCRVersion.PPOCRV5, "Rec.model_type": ModelType.MOBILE,
+                                "Det.limit_type": "max", "Det.limit_side_len": 4000})
     return _ocr
 
 
@@ -147,7 +150,12 @@ def ocr_words(gray: np.ndarray, bands: list[tuple[int, int, int, int]]) -> list[
         if result is None or result.boxes is None:
             continue
         for line_words in result.word_results or []:
-            for text, score, box in line_words:
+            # a line is its words (text, score, box) each; a line read empty comes as one ('', 1.0, None)
+            items = [line_words] if line_words and isinstance(line_words[0], str) else list(line_words or [])
+            for item in items:
+                if not isinstance(item, (tuple, list)) or len(item) != 3 or item[2] is None:
+                    continue
+                text, score, box = item
                 if not text or not text.strip():
                     continue
                 points = np.asarray(box, dtype=float) / scale
