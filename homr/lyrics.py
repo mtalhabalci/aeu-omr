@@ -125,7 +125,8 @@ def _ocr_engine():  # noqa: ANN202
         # pages read as pictures (83.8 % of the text layer's syllables against 84.3), 2.7 times as fast on Atkoşar's
         _ocr = RapidOCR(params={"Global.log_level": "warning", "Rec.lang_type": LangRec.LATIN,
                                 "Rec.ocr_version": OCRVersion.PPOCRV5, "Rec.model_type": ModelType.MOBILE,
-                                "Det.limit_type": "max", "Det.limit_side_len": 4000})
+                                "Det.limit_type": "max", "Det.limit_side_len": 4000,
+                                "EngineConfig.onnxruntime.use_cuda": os.environ.get("OMR_SOZ_OCR_GPU") == "1"})
     return _ocr
 
 

@@ -9,12 +9,14 @@ as the service gives them, and written as a layer: for each syllable its measure
 recognition score. With each measure that has lyrics, the number of its notes, so that a MusicXML corrected since
 (its notes changed) takes the layer only where the measure's notes are as many as in the reading.
 
-    python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk]
+    python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk] [--saat HH:MM-HH:MM]
 
 A parti folder holds okuma/<id>.json (the service's answer, under 'okuma'), okuma/<id>.musicxml and pdf/<id>.pdf; the
 layer goes to <out>/<id>.json (one already there is left). --parca i/n takes every n-th work from the i-th (from 0),
 for runs side by side. The works of an instrumental form (peşrev, saz semaisi...: the reading's 'form') are left out,
 unless --hepsi. --dusuk runs the process at below-normal priority (Windows), so that the machine stays responsive.
+--saat 00:00-08:00 works only in that window: it waits for its start and stops at its end. --gpu finds the staffs and
+reads the bands on the GPU (onnxruntime-gpu; the segmentation's fp32 model, as no fp16 one is at hand).
 """
 
 import glob
@@ -112,6 +114,46 @@ def layer(pdf: str, answer: dict, musicxml: str, processing: ProcessingConfig, o
             "olcuNotaSayisi": {str(m): counts[m] for m in sorted({r["olcu"] for r in written}) if m in counts}}
 
 
+def _use_gpu() -> None:
+    """The segmentation's fp32 model on CUDA (homr's GPU path wants an fp16 file), and the lyrics OCR on CUDA."""
+    import torch  # noqa: F401, PLC0415  (its CUDA libraries, for onnxruntime-gpu)
+    import onnxruntime as ort  # noqa: PLC0415
+
+    from homr.segmentation import inference_segnet as seg  # noqa: PLC0415
+
+    if hasattr(ort, "preload_dlls"):
+        ort.preload_dlls()
+    plain_init = seg.Segnet.__init__
+
+    def init(self, use_gpu_inference: bool) -> None:  # noqa: ANN001
+        if not use_gpu_inference:
+            plain_init(self, False)
+            return
+        self.model = ort.InferenceSession(seg.segnet_path_onnx,
+                                          providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+        self.fp16, self.use_gpu = False, True
+        self.io_binding = self.model.io_binding()
+        self.device_id = 0
+        self.input_name = self.model.get_inputs()[0].name
+        self.output_name = self.model.get_outputs()[0].name
+
+    seg.Segnet.__init__ = init
+    os.environ["OMR_SOZ_OCR_GPU"] = "1"
+
+
+def _minutes(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _in_window(window: tuple[int, int] | None) -> bool:
+    if window is None:
+        return True
+    now = time.localtime()
+    minute, (start, end) = now.tm_hour * 60 + now.tm_min, window
+    return start <= minute < end if start <= end else minute >= start or minute < end
+
+
 def _commit() -> str:
     try:
         return subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
@@ -138,11 +180,18 @@ def main() -> None:
             ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x4000)
         else:
             os.nice(10)
+    window = None
+    if "--saat" in args:
+        i = args.index("--saat")
+        window = tuple(_minutes(x) for x in args[i + 1].split("-"))
+        del args[i:i + 2]
     everything = "--hepsi" in args
     if everything:
         args.remove("--hepsi")
     out, folders = args[0], args[1:]
     os.makedirs(out, exist_ok=True)
+    if gpu:
+        _use_gpu()
     processing = ProcessingConfig(False, False, False, False, -1, gpu)
     works = sorted(f for folder in folders for f in glob.glob(os.path.join(folder, "okuma", "*.json")))
     works = works[part::parts]
@@ -150,6 +199,11 @@ def main() -> None:
     done = 0
     start = time.perf_counter()
     for f in works:
+        while not _in_window(window):
+            if done:  # the window is over
+                print(f"saat penceresi bitti: {done} eser", flush=True)
+                return
+            time.sleep(60)
         gid = os.path.basename(f)[:-5]
         target = os.path.join(out, gid + ".json")
         if os.path.exists(target):
