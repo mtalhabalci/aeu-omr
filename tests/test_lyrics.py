@@ -65,3 +65,12 @@ def test_tempo_words_and_letter_spaced_directions_are_not_sung() -> None:
     words += [Word(c, (500 + 9 * i, 160, 507 + 9 * i, 172)) for i, c in enumerate("Karar")]
     lines = staff_lyrics(words, [staff], 1000)[0].lines
     assert [[w.text for w in line] for line in lines] == [["Yi"]]
+
+
+def test_credits_directions_in_parentheses_and_usul_names_are_not_sung() -> None:
+    staff = (100, 100, 900, 140)
+    words = [Word("Yi", (190, 160, 210, 172)), Word("(2'ye)", (300, 160, 350, 172)), Word("ne", (400, 160, 420, 172)),
+             Word("Aksak", (600, 160, 650, 172)),
+             Word("Güfte:", (190, 180, 240, 192)), Word("Fâik", (250, 180, 290, 192)), Word("Ali", (300, 180, 330, 192))]
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [[w.text for w in line] for line in lines] == [["Yi", "ne"]]

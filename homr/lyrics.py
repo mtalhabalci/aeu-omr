@@ -37,7 +37,13 @@ NOT_SUNG = {
     "agir", "agirca", "agirdan", "cabuk", "cabukca", "orta", "ortaagir", "yavas", "yavasca", "hizli", "yuruk",
     "sert", "agirlasarak", "hizlanarak", "agirlasir", "serbest", "rubato", "moderato", "andante", "allegro",
     "adagio", "largo", "lento", "presto", "tempo",
+    # usul names (written over the next staff)
+    "aksak", "duyek", "sofyan", "semai", "curcuna", "nimsofyan", "turkaksagi", "devrihindi", "agiraksak",
+    "yuruksemai", "aksaksemai", "agirsemai", "devrikebir", "cenber", "zencir", "muhammes", "darbeyn", "frenkcin",
+    "lenkfahte", "evfer", "nimevfer", "devrituran", "raksaksagi", "usul", "usulu", "mertebe",
 }
+# a line holding one of these is a credit or a date, not sung (Güfte: ..., B.T.: 07 Ağustos 1963)
+CREDITS = {"gufte", "beste", "bestekar", "guftekar", "notaya", "notayaalan", "bt", "derleyen", "duzenleyen", "kitaya"}
 _FOLD = str.maketrans("çğıİöşüâîûÇĞÖŞÜÂÎÛ", "cgiiosuaiuCGOSUAIU")
 _VOWELS = set("aeıioöuüâîûAEIİOÖUÜÂÎÛ")
 _STEPS = "CDEFGAB"
@@ -268,6 +274,19 @@ def _poem(line: list[Word]) -> bool:
     return len(lengths) >= 3 and (float(np.median(lengths)) >= 5 or sum(n >= 7 for n in lengths) * 2 > len(lengths))
 
 
+def _outside_parentheses(line: list[Word]) -> list[Word]:
+    """A line (left to right) without what stands in parentheses: a direction, (2'ye), (III ve IV KITA'YA)."""
+    out, inside = [], False
+    for w in line:
+        if w.text.startswith("("):
+            inside = True
+        if not inside:
+            out.append(w)
+        if w.text.rstrip(".,;").endswith(")"):
+            inside = False
+    return out
+
+
 def _without_spaced_letters(words: list[Word]) -> list[Word]:
     """Without the letters of a word written letter-spaced (A r a n a ğ m e s i ' n e, K a r a r): three or more
     one-letter words at about one height, each within a letter's height of the next."""
@@ -312,6 +331,12 @@ def _lines(words: list[Word]) -> list[list[Word]]:
             lines[-1].append(word)
     out = []
     for line in lines:
+        line = _outside_parentheses(sorted(line, key=lambda w: w.box[0]))
+        if not line:
+            continue
+        # a credit or a date (one digit alone is more likely a letter misread: l as 1)
+        if any(":" in w.text or sum(c.isdigit() for c in w.text) >= 2 or _fold(w.text) in CREDITS for w in line):
+            continue
         capitals = all(_letters(w.text).isupper() and len(_letters(w.text)) >= 2 for w in line)
         if capitals and not any(_letters(w.text).islower() for w in line):
             continue
