@@ -9,12 +9,12 @@ as the service gives them, and written as a layer: for each syllable its measure
 recognition score. With each measure that has lyrics, the number of its notes, so that a MusicXML corrected since
 (its notes changed) takes the layer only where the measure's notes are as many as in the reading.
 
-    python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi]
+    python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk]
 
 A parti folder holds okuma/<id>.json (the service's answer, under 'okuma'), okuma/<id>.musicxml and pdf/<id>.pdf; the
 layer goes to <out>/<id>.json (one already there is left). --parca i/n takes every n-th work from the i-th (from 0),
 for runs side by side. The works of an instrumental form (peşrev, saz semaisi...: the reading's 'form') are left out,
-unless --hepsi.
+unless --hepsi. --dusuk runs the process at below-normal priority (Windows), so that the machine stays responsive.
 """
 
 import glob
@@ -130,6 +130,14 @@ def main() -> None:
     if "--gpu" in args:
         gpu = True
         args.remove("--gpu")
+    if "--dusuk" in args:
+        args.remove("--dusuk")
+        if os.name == "nt":
+            import ctypes  # noqa: PLC0415
+
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x4000)
+        else:
+            os.nice(10)
     everything = "--hepsi" in args
     if everything:
         args.remove("--hepsi")
