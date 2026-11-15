@@ -177,7 +177,12 @@ def main() -> None:
         if os.name == "nt":
             import ctypes  # noqa: PLC0415
 
-            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x4000)
+            kernel32 = ctypes.windll.kernel32
+            # the handle is a pointer: as a C int (ctypes' default) the call fails and leaves the priority Normal
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            if not kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), 0x4000):  # BELOW_NORMAL_PRIORITY_CLASS
+                print("öncelik düşürülemedi", flush=True)
         else:
             os.nice(10)
     window = None
