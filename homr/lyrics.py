@@ -7,7 +7,8 @@ each word), read in each staff's lyric band only.
 Bands and verses. A staff's lyric band is the strip under it, as wide as the staff, down to the next staff below it (and
 no further than a few staff heights). The band's words fall into lines by their height; line n from the top is verse n.
 Words that are not sung are left out: section and instrument names (ARANAĞMESİ, GİRİŞ SAZI, SAZ, NAKARAT, MEYAN, SON...),
-a line written all in capitals, numbers, and the signs of the music font.
+a heading written in capitals (but not a line of syllables in capitals: AK SA RAY DAN), a person's name beside the lyrics
+(the arranger's), numbers, and the signs of the music font.
 
 Notes. Each syllable goes to the note whose head stands nearest above it. The heads are those the staff detection found
 (x and place on the staff); they are matched to the staff's written notes in order by their place on the staff (the
@@ -44,6 +45,8 @@ NOT_SUNG = {
 }
 # a line holding one of these is a credit or a date, not sung (Güfte: ..., B.T.: 07 Ağustos 1963)
 CREDITS = {"gufte", "beste", "bestekar", "guftekar", "notaya", "notayaalan", "bt", "derleyen", "duzenleyen", "kitaya"}
+# Turkish letters of a font encoded in Windows-1254 but read as Windows-1252 (Faruk Þahin): none of these is Turkish
+_CP1254 = str.maketrans("ÞþÝýÐð", "ŞşİıĞğ")
 _FOLD = str.maketrans("çğıİöşüâîûÇĞÖŞÜÂÎÛ", "cgiiosuaiuCGOSUAIU")
 _VOWELS = set("aeıioöuüâîûAEIİOÖUÜÂÎÛ")
 _STEPS = "CDEFGAB"
@@ -113,7 +116,7 @@ def text_layer_words(pdf_path: str, page_no: int, zoom: float) -> list[Word]:
             if _music_font(text) or not _letters(text):
                 continue
             r = fitz.Rect(x0, y0, x1, y1) * to_pixels
-            words.append(Word(text, (r.x0, r.y0, r.x1, r.y1)))
+            words.append(Word(text.translate(_CP1254), (r.x0, r.y0, r.x1, r.y1)))
     return words
 
 
@@ -305,6 +308,44 @@ def _without_spaced_letters(words: list[Word]) -> list[Word]:
     return [w for w in words if id(w) not in drop]
 
 
+def _vowels(text: str) -> int:
+    return sum(c in _VOWELS for c in text)
+
+
+def _heading(line: list[Word]) -> bool:
+    """A line in capitals that is a heading (a section's name, the work's name, its usul: ARANAĞME, GİRİŞ SAZI,
+    USÛLÜ EVFER), not a line of syllables written in capitals (AK SA RAY DAN GE ÇER, HEY HEY HEY): its words are of
+    several syllables, where a syllable has one vowel."""
+    parts = [_letters(p) for w in line for p in re.split(r"[-–]", w.text) if _letters(p)]
+    if not parts or not all(p.isupper() for p in parts):
+        return False
+    return float(np.median([_vowels(p) for p in parts])) > 1
+
+
+def _name(word: Word) -> bool:
+    """A word of a person's name (the arranger's, written beside the lyrics: Faruk Şahin): a capital and small letters,
+    several syllables in one word. A syllable has one vowel."""
+    letters = _letters(word.text)
+    return len(letters) >= 2 and letters[0].isupper() and letters[1:].islower() and _vowels(letters) >= 2
+
+
+def _names(line: list[Word]) -> list[Word]:
+    """A line without a person's name written in it: two to four name words, side by side, in a line whose other
+    words are syllables (one vowel each) or that holds nothing else."""
+    out, n = list(line), len(line)
+    i = 0
+    while i < n:
+        j = i
+        while j < n and _name(line[j]):
+            j += 1
+        rest = line[:i] + line[j:]
+        if 2 <= j - i <= 4 and all(_vowels(_letters(w.text)) <= 1 for w in rest):
+            out = rest
+            break
+        i = j + 1 if j > i else i + 1
+    return out
+
+
 def _sung(word: Word) -> bool:
     """A syllable: letters with a vowel (a lone consonant is a sign of the music font: v, d), not a section's name."""
     letters = _letters(word.text)
@@ -314,8 +355,8 @@ def _sung(word: Word) -> bool:
 
 
 def _lines(words: list[Word]) -> list[list[Word]]:
-    """A band's words in lines by height, top first, each left to right; a line of capitals only (a section's name)
-    and the words that are not sung are left out."""
+    """A band's words in lines by height, top first, each left to right; a heading in capitals, a person's name and
+    the words that are not sung are left out."""
     if not words:
         return []
     words = sorted(words, key=lambda w: w.cy)
@@ -337,9 +378,9 @@ def _lines(words: list[Word]) -> list[list[Word]]:
         # a credit or a date (one digit alone is more likely a letter misread: l as 1)
         if any(":" in w.text or sum(c.isdigit() for c in w.text) >= 2 or _fold(w.text) in CREDITS for w in line):
             continue
-        capitals = all(_letters(w.text).isupper() and len(_letters(w.text)) >= 2 for w in line)
-        if capitals and not any(_letters(w.text).islower() for w in line):
+        if _heading(line):
             continue
+        line = _names(line)
         kept = sorted((Word(_clean(w.text), w.box, w.score, w.left) for w in line if _sung(w)), key=lambda w: w.cx)
         kept = [w for w in kept if w.text]
         if kept and _poem(kept):

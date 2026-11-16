@@ -74,3 +74,31 @@ def test_credits_directions_in_parentheses_and_usul_names_are_not_sung() -> None
              Word("Güfte:", (190, 180, 240, 192)), Word("Fâik", (250, 180, 290, 192)), Word("Ali", (300, 180, 330, 192))]
     lines = staff_lyrics(words, [staff], 1000)[0].lines
     assert [[w.text for w in line] for line in lines] == [["Yi", "ne"]]
+
+
+def test_syllables_in_capitals_are_sung_a_heading_and_a_name_are_not() -> None:
+    # words and boxes of a typeset türkü's text layer (Aksaray'dan Geçer İken, page 2): all its lyrics in capitals,
+    # the arranger's name beside the last line
+    staff = (45.0, 470.0, 555.0, 505.0)
+    words = [Word("Faruk", (506.9, 512.5, 527.4, 522.6)), Word("Þahin", (530.2, 512.5, 550.4, 522.6))]
+    words += [Word(t, (x0, 519.9, x1, 529.0)) for t, x0, x1 in (
+        ("HEY", 83.3, 100.4), ("DA", 184.3, 196.7), ("LE", 201.8, 211.9), ("DE", 217.4, 228.9), ("DA", 271.7, 284.1),
+        ("LE", 289.2, 299.2), ("DA", 337.4, 349.8), ("LE", 355.0, 365.0), ("DE", 370.6, 382.0), ("DA", 425.0, 437.4),
+        ("LE", 442.6, 452.6), ("DA", 490.6, 502.9), ("LE", 508.1, 518.1))]
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [" ".join(w.text for w in line) for line in lines] == ["HEY DA LE DE DA LE DA LE DE DA LE DA LE"]
+    # a line of syllables in capitals is sung (HEY HEY HEY too); a heading in capitals is not
+    staff = (100.0, 100.0, 900.0, 140.0)
+    words = [Word(t, (x, 160, x + 20, 172)) for t, x in (("HEY", 200), ("HEY", 400), ("HEY", 600))]
+    words += [Word("GİRİŞ", (300, 176, 350, 188)), Word("SAZI", (360, 176, 400, 188))]
+    words += [Word(t, (x, 192, x + 20, 204)) for t, x in (("VE", 200), ("RİN", 300), ("BE", 400), ("NİM", 500))]
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [" ".join(w.text for w in line) for line in lines] == ["HEY HEY HEY", "VE RİN BE NİM"]
+
+
+def test_a_name_inside_a_line_of_syllables_is_left_out() -> None:
+    staff = (100.0, 100.0, 900.0, 140.0)
+    words = [Word(t, (x, 160, x + 30, 172)) for t, x in (("Gül", 200), ("ni", 300), ("hal", 400), ("Faruk", 700),
+                                                          ("Şahin", 750))]
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [" ".join(w.text for w in line) for line in lines] == ["Gül ni hal"]
