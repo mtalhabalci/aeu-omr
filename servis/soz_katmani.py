@@ -10,6 +10,7 @@ recognition score. With each measure that has lyrics, the number of its notes, s
 (its notes changed) takes the layer only where the measure's notes are as many as in the reading.
 
     python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk] [--saat HH:MM-HH:MM] [--ters]
+                                 [--yeniden ids.json]
 
 A parti folder holds okuma/<id>.json (the service's answer, under 'okuma'), okuma/<id>.musicxml and pdf/<id>.pdf; the
 layer goes to <out>/<id>.json (one already there is left). --parca i/n takes every n-th work from the i-th (from 0),
@@ -17,7 +18,9 @@ for runs side by side. The works of an instrumental form (peşrev, saz semaisi..
 unless --hepsi. --dusuk runs the process at below-normal priority (Windows), so that the machine stays responsive.
 --saat 00:00-08:00 works only in that window: it waits for its start and stops at its end. --gpu finds the staffs and
 reads the bands on the GPU (onnxruntime-gpu; the segmentation's fp32 model, as no fp16 one is at hand). --ters takes
-the works from the end, so that a run started beside others meets them only at the end.
+the works from the end, so that a run started beside others meets them only at the end. --yeniden ids.json makes again
+the layers of the works listed there (a JSON list of ids) that are older than the list file (made before a change of the
+rules), after the works that have no layer yet.
 """
 
 import glob
@@ -194,6 +197,13 @@ def main() -> None:
     backwards = "--ters" in args
     if backwards:
         args.remove("--ters")
+    redo: set[str] = set()
+    redo_before = 0.0
+    if "--yeniden" in args:
+        i = args.index("--yeniden")
+        redo = set(json.load(open(args[i + 1], encoding="utf-8")))
+        redo_before = os.path.getmtime(args[i + 1])
+        del args[i:i + 2]
     everything = "--hepsi" in args
     if everything:
         args.remove("--hepsi")
@@ -206,6 +216,14 @@ def main() -> None:
     works = works[part::parts]
     if backwards:
         works.reverse()
+
+    def again(f: str) -> bool:
+        gid = os.path.basename(f)[:-5]
+        target = os.path.join(out, gid + ".json")
+        return gid in redo and os.path.exists(target) and os.path.getmtime(target) < redo_before
+
+    if redo:  # the works without a layer first
+        works = [f for f in works if not again(f)] + [f for f in works if again(f)]
     commit = _commit()
     done = 0
     start = time.perf_counter()
@@ -217,7 +235,7 @@ def main() -> None:
             time.sleep(60)
         gid = os.path.basename(f)[:-5]
         target = os.path.join(out, gid + ".json")
-        if os.path.exists(target):
+        if os.path.exists(target) and not again(f):
             try:
                 if "hata" not in json.load(open(target, encoding="utf-8")):
                     continue  # done; a work that failed (memory, a broken page) is tried again
