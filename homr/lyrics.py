@@ -43,6 +43,8 @@ NOT_SUNG = {
     "yuruksemai", "aksaksemai", "agirsemai", "devrikebir", "cenber", "zencir", "muhammes", "darbeyn", "frenkcin",
     "lenkfahte", "evfer", "nimevfer", "devrituran", "raksaksagi", "usul", "usulu", "mertebe",
 }
+# the syllables an usul is said with (velvele), written under a staff: DÜM TEK TE KE, DÜM TÂ HEK
+VELVELE = {"dum", "tek", "te", "ke", "ta", "hek", "teke", "tekke", "tahek"}
 # a line holding one of these is a credit or a date, not sung (Güfte: ..., B.T.: 07 Ağustos 1963)
 CREDITS = {"gufte", "beste", "bestekar", "guftekar", "notaya", "notayaalan", "bt", "derleyen", "duzenleyen", "kitaya"}
 # Turkish letters of a font encoded in Windows-1254 but read as Windows-1252 (Faruk Þahin): none of these is Turkish
@@ -313,13 +315,22 @@ def _vowels(text: str) -> int:
 
 
 def _heading(line: list[Word]) -> bool:
-    """A line in capitals that is a heading (a section's name, the work's name, its usul: ARANAĞME, GİRİŞ SAZI,
-    USÛLÜ EVFER), not a line of syllables written in capitals (AK SA RAY DAN GE ÇER, HEY HEY HEY): its words are of
-    several syllables, where a syllable has one vowel."""
+    """A line (left to right) in capitals that is not sung: a heading (a section's name, the work's name, its makam
+    or usul, an abbreviation: ARANAĞME, RAST MARŞ, EVÇ SAZ SEMÂİSİ, ÜMC), a title in quotes or the syllables an usul is
+    said with (DÜM TEK TE KE), not a line of syllables written in capitals (AK SA RAY DAN GE ÇER, HEY HEY HEY). A line
+    of syllables has two or more, most of one vowel, and they stand apart, each under its note; a heading is one word,
+    or words of several syllables, or words a space apart."""
     parts = [_letters(p) for w in line for p in re.split(r"[-–]", w.text) if _letters(p)]
     if not parts or not all(p.isupper() for p in parts):
         return False
-    return float(np.median([_vowels(p) for p in parts])) > 1
+    if len(parts) == 1:
+        return len(parts[0]) >= 2  # a lone vowel is a syllable
+    if all(_fold(p) in VELVELE for p in parts):
+        return True
+    if sum(_vowels(p) > 1 for p in parts) * 4 > len(parts):  # words (OCR joins a few syllables: GELIN, 2 in 9)
+        return True
+    gaps = [b.box[0] - a.box[2] for a, b in zip(line, line[1:])]
+    return not gaps or float(np.median(gaps)) < 0.5 * float(np.median([w.height for w in line]))
 
 
 def _name(word: Word) -> bool:
@@ -380,12 +391,11 @@ def _lines(words: list[Word]) -> list[list[Word]]:
             continue
         if _heading(line):
             continue
-        line = _names(line)
         kept = sorted((Word(_clean(w.text), w.box, w.score, w.left) for w in line if _sung(w)), key=lambda w: w.cx)
         kept = [w for w in kept if w.text]
         if kept and _poem(kept):
             break  # the poem under the score; nothing under it is sung either
-        kept = [part for w in kept for part in _split_syllables(w)]
+        kept = [part for w in _names(kept) for part in _split_syllables(w)]
         if kept:
             out.append(kept)
     return out

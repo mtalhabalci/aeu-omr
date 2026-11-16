@@ -102,3 +102,32 @@ def test_a_name_inside_a_line_of_syllables_is_left_out() -> None:
                                                           ("Şahin", 750))]
     lines = staff_lyrics(words, [staff], 1000)[0].lines
     assert [" ".join(w.text for w in line) for line in lines] == ["Gül ni hal"]
+
+
+def test_a_word_in_capitals_alone_and_the_poem_with_a_name_in_it_are_not_sung() -> None:
+    staff = (100.0, 100.0, 900.0, 140.0)
+    words = [Word("Yi", (200, 160, 220, 172)), Word("ne", (300, 160, 320, 172)),
+             Word("RAST", (200, 176, 240, 188)),  # the makam's name
+             Word("Tanburi", (200, 192, 260, 204)), Word("Büyük", (270, 192, 320, 204)),  # a name and title (Bey)
+             Word("Osman", (330, 192, 380, 204)), Word("Bey", (390, 192, 420, 204))]
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [" ".join(w.text for w in line) for line in lines] == ["Yi ne"]
+
+
+def test_a_heading_a_title_and_an_usul_in_capitals_are_not_sung() -> None:
+    staff = (100.0, 100.0, 900.0, 140.0)
+
+    def line(y: float, texts: list[str], gap: float) -> list[Word]:
+        out, x = [], 120.0
+        for t in texts:
+            out.append(Word(t, (x, y, x + 9 * len(t), y + 12)))
+            x += 9 * len(t) + gap
+        return out
+
+    words = line(160, ["ÇOK", "BEK", "LE", "DİM", "AK", "ŞAM"], 40)  # syllables, each under its note: sung
+    words += line(176, ["RAST", "MARŞ"], 3)  # a heading: its words a space apart
+    words += line(192, ["EVÇ", "SAZ", "SEMÂİSİ"], 3)
+    words += line(208, ["BİR", "AŞK", "GERÇEK", "BİR", "DE", "ÖLÜM"], 4)  # a title
+    words += line(224, ["DÜM", "TEK", "TE", "KE", "DÜM", "TEK"], 40)  # the usul's syllables
+    lines = staff_lyrics(words, [staff], 1000)[0].lines
+    assert [" ".join(w.text for w in line) for line in lines] == ["ÇOK BEK LE DİM AK ŞAM"]

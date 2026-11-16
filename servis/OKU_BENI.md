@@ -343,7 +343,12 @@ Uygulamanın söz eşiği `guven` üzerinden kurulur.
 - Bir portenin söz bandı, porte boyunca altındaki şerittir; aşağıdaki porteye kadar sürer, en çok dört porte boyu olur.
   Bantta yazılar yüksekliklerine göre satırlara ayrılır ve en üstteki satır 1. kıta sayılır. Şunlar hece sayılmaz:
   - bölüm, saz ve tempo adları: ARANAĞMESİ, SAZ, MEYAN, Çabuk, Ağır...;
-  - yalnız büyük harfle yazılmış satırlar;
+  - büyük harfle yazılmış başlıklar: tek kelime (RAST, ÜMC), çok heceli kelimeler (ARANAĞME, GİRİŞ SAZI) ya da
+    kelimeleri bir boşluk arayla yazılmış satır (RAST MARŞ, tırnak içinde eser adı); usulün hece satırı (DÜM TEK TE
+    KE). Büyük harfle yazılmış söz satırı ise söylenir: hecelerinin çoğu tek ünlülüdür ve heceler notalarının
+    altına aralıklı dizilir (AK SA RAY DAN GE ÇER, HEY HEY HEY; 16.11.2026);
+  - söz satırının yanında yazılmış kişi adı: düzenleyen ya da imza (Faruk Şahin), iki-dört kelime, her biri büyük
+    harfle başlayan çok heceli kelime;
   - harfleri aralıklı yazılmış yönergeler;
   - nota yazı tipinin işaretleri (ünlüsüz tek harfler);
   - sayfa altındaki güfte metni (tam kelimelerden oluşan satırlar).
