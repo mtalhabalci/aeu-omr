@@ -10,7 +10,7 @@ recognition score. With each measure that has lyrics, the number of its notes, s
 (its notes changed) takes the layer only where the measure's notes are as many as in the reading.
 
     python -m servis.soz_katmani <out> <parti folder>... [--parca i/n] [--gpu] [--hepsi] [--dusuk] [--saat HH:MM-HH:MM] [--ters]
-                                 [--yeniden ids.json]
+                                 [--yeniden ids.json] [--onbellek <dir>]
 
 A parti folder holds okuma/<id>.json (the service's answer, under 'okuma'), okuma/<id>.musicxml and pdf/<id>.pdf; the
 layer goes to <out>/<id>.json (one already there is left). --parca i/n takes every n-th work from the i-th (from 0),
@@ -20,7 +20,9 @@ unless --hepsi. --dusuk runs the process at below-normal priority (Windows), so 
 reads the bands on the GPU (onnxruntime-gpu; the segmentation's fp32 model, as no fp16 one is at hand). --ters takes
 the works from the end, so that a run started beside others meets them only at the end. --yeniden ids.json makes again
 the layers of the works listed there (a JSON list of ids) that are older than the list file (made before a change of the
-rules), after the works that have no layer yet.
+rules), after the works that have no layer yet. --onbellek <dir> keeps each work's staffs and words (text layer or OCR)
+in <dir>/<id>.json and takes them from there on a later run, so that a change of the lyric rules makes the layers again
+in seconds a work, without finding the staffs or reading the bands again.
 """
 
 import glob
@@ -37,7 +39,7 @@ import cv2
 import fitz
 
 from homr.autocrop import autocrop_box
-from homr.lyrics import StaffLyrics, add_lyrics, lyric_bands, ocr_words, staff_lyrics, text_layer_words
+from homr.lyrics import StaffLyrics, Word, add_lyrics, lyric_bands, ocr_words, staff_lyrics, text_layer_words
 from homr.main import ProcessingConfig, detect_staffs_in_image
 from servis.nota_servisi import PAGE_WIDTH, lyrics_summary, scanned
 
@@ -69,8 +71,22 @@ def _match(stored: list[int], found: list[tuple[list[int], list]]) -> list | Non
     return best[1]
 
 
-def layer(pdf: str, answer: dict, musicxml: str, processing: ProcessingConfig, ocr: bool = True) -> dict:
-    """The lyric layer of one work (answer: the service's answer it was read with)."""
+def _load_cache(cache: str | None, pdf: str) -> dict:
+    """The pages saved by an earlier run of this work (its PDF the same size), or nothing."""
+    if not cache or not os.path.exists(cache):
+        return {}
+    try:
+        saved = json.load(open(cache, encoding="utf-8"))
+    except ValueError:
+        return {}
+    return saved.get("sayfalar", {}) if saved.get("pdfBoyut") == os.path.getsize(pdf) else {}
+
+
+def layer(pdf: str, answer: dict, musicxml: str, processing: ProcessingConfig, ocr: bool = True,
+          cache: str | None = None) -> dict:
+    """The lyric layer of one work (answer: the service's answer it was read with). With a cache file, each page's
+    staffs (boxes, noteheads) and words (text layer or OCR) are kept there, and a later run takes them from it: a change
+    of the lyric rules then makes the layer again without finding the staffs and reading the bands again."""
     porteler = answer["porteler"]
     heads: list[list] = []
     lyrics: list[StaffLyrics] = []
@@ -78,26 +94,37 @@ def layer(pdf: str, answer: dict, musicxml: str, processing: ProcessingConfig, o
     measures: list[tuple[int, int]] = []
     sources: set[str] = set()
     unmatched = 0
+    saved, pages = _load_cache(cache, pdf), {}
     with tempfile.TemporaryDirectory() as scratch, fitz.open(pdf) as document:
         for page_no in sorted({p["sayfa"] for p in porteler}):
             stored = [p for p in porteler if p["sayfa"] == page_no]
-            page = document[page_no - 1]
-            zoom = PAGE_WIDTH / page.rect.width
-            image = os.path.join(scratch, f"sayfa-{page_no}.png")
-            page.get_pixmap(matrix=fitz.Matrix(zoom, zoom)).save(image)
-            pixels = cv2.imread(image)
-            gray = cv2.cvtColor(pixels, cv2.COLOR_BGR2GRAY)
-            try:
-                found = _staffs(image, processing, pixels)
-            except Exception:  # noqa: BLE001
-                found = []
             page_boxes = [tuple(p["kutu"]) for p in stored]
-            words = [] if scanned(page) else text_layer_words(pdf, page_no, zoom)
-            kind = "katman"
-            if not words and ocr:
-                words = ocr_words(gray, lyric_bands(page_boxes, gray.shape[0]))
-                kind = "ocr"
-            page_lyrics = staff_lyrics(words, page_boxes, gray.shape[0])
+            hit = saved.get(str(page_no))
+            if hit and hit["kutular"] == [list(b) for b in page_boxes]:
+                found = [(b, [tuple(h) for h in hs]) for b, hs in hit["porteler"]]
+                words = [Word(t, tuple(b), s, left) for t, b, s, left in hit["kelimeler"]]
+                kind, height = hit["tur"], hit["yukseklik"]
+            else:
+                page = document[page_no - 1]
+                zoom = PAGE_WIDTH / page.rect.width
+                image = os.path.join(scratch, f"sayfa-{page_no}.png")
+                page.get_pixmap(matrix=fitz.Matrix(zoom, zoom)).save(image)
+                pixels = cv2.imread(image)
+                gray = cv2.cvtColor(pixels, cv2.COLOR_BGR2GRAY)
+                height = gray.shape[0]
+                try:
+                    found = _staffs(image, processing, pixels)
+                except Exception:  # noqa: BLE001
+                    found = []
+                words = [] if scanned(page) else text_layer_words(pdf, page_no, zoom)
+                kind = "katman"
+                if not words and ocr:
+                    words = ocr_words(gray, lyric_bands(page_boxes, height))
+                    kind = "ocr"
+            pages[str(page_no)] = {"kutular": [list(b) for b in page_boxes], "yukseklik": height, "tur": kind,
+                                   "porteler": [[list(b), [list(h) for h in hs]] for b, hs in found],
+                                   "kelimeler": [[w.text, list(w.box), w.score, w.left] for w in words]}
+            page_lyrics = staff_lyrics(words, page_boxes, height)
             if any(s.lines for s in page_lyrics):
                 sources.add(kind)
             for p, staff_lyrics_ in zip(stored, page_lyrics, strict=True):
@@ -109,6 +136,10 @@ def layer(pdf: str, answer: dict, musicxml: str, processing: ProcessingConfig, o
                 lyrics.append(staff_lyrics_)
                 boxes.append(tuple(p["kutu"]))
                 measures.append((p["olcuBas"], p["olcuSon"]) if p["olcuBas"] is not None else (1, 0))
+    if cache and pages != saved:
+        with open(cache + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump({"pdfBoyut": os.path.getsize(pdf), "sayfalar": pages}, fh, ensure_ascii=False)
+        os.replace(cache + ".tmp", cache)
     _, record = add_lyrics(musicxml, measures, heads, lyrics, boxes)
     written = [r for r in record if r["olcu"] is not None]
     counts = {int(m.group(1)): m.group(2).count("<note") for m in _MEASURE.finditer(musicxml)}
@@ -207,6 +238,12 @@ def main() -> None:
     everything = "--hepsi" in args
     if everything:
         args.remove("--hepsi")
+    cache_dir = None
+    if "--onbellek" in args:
+        i = args.index("--onbellek")
+        cache_dir = args[i + 1]
+        del args[i:i + 2]
+        os.makedirs(cache_dir, exist_ok=True)
     out, folders = args[0], args[1:]
     os.makedirs(out, exist_ok=True)
     if gpu:
@@ -254,7 +291,8 @@ def main() -> None:
         raw = open(xml_path, "rb").read()
         t = time.perf_counter()
         try:
-            result = layer(pdf, answer, raw.decode("utf-8"), processing)
+            result = layer(pdf, answer, raw.decode("utf-8"), processing,
+                           cache=os.path.join(cache_dir, gid + ".json") if cache_dir else None)
         except Exception as e:  # noqa: BLE001
             result = {"hata": f"{type(e).__name__}: {e}"}
         result = {"id": gid, "okumaSha256": hashlib.sha256(raw).hexdigest(), "kod": commit,

@@ -131,3 +131,32 @@ def test_a_heading_a_title_and_an_usul_in_capitals_are_not_sung() -> None:
     words += line(224, ["DÜM", "TEK", "TE", "KE", "DÜM", "TEK"], 40)  # the usul's syllables
     lines = staff_lyrics(words, [staff], 1000)[0].lines
     assert [" ".join(w.text for w in line) for line in lines] == ["ÇOK BEK LE DİM AK ŞAM"]
+
+
+def test_a_misread_syllable_an_unclosed_parenthesis_and_joined_capitals_keep_the_line() -> None:
+    # OCR lines of three Atkoşar scans (13514, 12902, 14130), their syllables under their notes
+    staff = (100.0, 100.0, 1900.0, 140.0)
+
+    def line(y: float, texts: list[str]) -> list[Word]:
+        # read by OCR: hand lettering, written from its note
+        return [Word(t, (120.0 + 110 * i, y, 120.0 + 110 * i + 9 * len(t), y + 14), 0.9, True)
+                for i, t in enumerate(texts)]
+
+    # 'son' read as '50n' is no date: the line is sung
+    words = line(160, ["den", "50n", "ra", "is", "fer", "vi", "san"])
+    assert [" ".join(w.text for w in x) for x in staff_lyrics(words, [staff], 1000)[0].lines] == ["den ra is fer vi san"]
+    # '(-SAZ' whose ')' OCR missed: only the direction is left out, not the syllables after it
+    words = line(160, ["i", "cin", "dar", "Göz", "le", "ri", "(-SAZ", "göz", "le", "ri", "-SAZ", "göz", "le", "ri", "nem"])
+    assert [" ".join(w.text for w in x) for x in staff_lyrics(words, [staff], 1000)[0].lines] == [
+        "i cin dar Göz le ri göz le ri göz le ri nem"]
+    # handwritten syllables in capitals, a few joined by OCR (HIDI, ELI, KII): sung, not a heading
+    words = line(160, ["EY", "$Â", "HIDI", "GAYB", "AL", "ELI", "NI", "HAK-", "KII", "ZÂ", "RIN"])
+    kept = staff_lyrics(words, [staff], 1000)[0].lines
+    assert len(kept) == 1 and kept[0][0].text == "EY" and kept[0][-1].text == "RIN"
+    # a colon read in the dots after a held syllable is no credit; a credit in parentheses is one, though unclosed
+    words = line(160, ["ben", "de", "ği", "iim", ":.SAZ"]) + line(190, ["(8.T.:", "Sgushos", "Fuad", "Edip", "Baks1"])
+    assert [" ".join(w.text for w in x) for x in staff_lyrics(words, [staff], 1000)[0].lines] == ["ben de ği i im"]
+    # on a typeset page's exact text layer the rules stay strict: a ')' is never missed there
+    typeset = [Word(t, (120.0 + 110 * i, 160, 120.0 + 110 * i + 9 * len(t), 174)) for i, t in enumerate(
+        ["Yi", "ne", "(Tüm", "sazlar....", "çalar"])]
+    assert [" ".join(w.text for w in x) for x in staff_lyrics(typeset, [staff], 1000)[0].lines] == ["Yi ne"]

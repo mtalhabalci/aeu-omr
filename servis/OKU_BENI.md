@@ -358,3 +358,17 @@ Uygulamanın söz eşiği `guven` üzerinden kurulur.
 - Ölçüm: Üsküdar baskısı 10 sözlü eser, 816 hece, 5 hakemli kör kontrol. Hecelerin hepsi doğru notada ve doğru yazılmış
   (%95 aralık %99,5–100), kaçan hece yok.
 - Ölçülmedi: başka yayınevlerinin vektör PDF'leri (Mus2, MuseScore, Sibelius dışa aktarımları).
+
+Taranmış sayfada (OCR ile okunan satırlar; 17.11.2026, Atkoşar) üç kural gevşer, çünkü OCR'ın kendi hataları gerçek söz
+satırını atıyordu. Metin katmanında kurallar aynıdır (Üsküdar taraması: 8.441 eserde değişen satır yok):
+
+- Kapanışı okunmamış parantez ("(-SAZ" yazılmış, ")" kaçmış) satırın sonuna kadar sürmez; yalnız açılan kelime atılır.
+  Eskiden "göz le ri (-SAZ göz le ri nem" satırının "(-SAZ"dan sonrası atılıyordu.
+- İki nokta yalnız satırın ilk iki kelimesinde, harften sonra gelirse künyedir (Güfte:, B.T.:). Uzatma noktaları ":"
+  okunabildiği için ("ben de ği im :.SAZ") başka yerdeki iki nokta satırı atmaz. Sayı ancak yalnız rakamsa (07, 1963) ya
+  da kelimede dört rakam varsa künyedir; harflerle karışık rakam yanlış okunmuş hecedir ("son" → "50n").
+- Altı ya da daha çok kısa parçalı (yarısı en çok üç harf) büyük harfli satırda, OCR birkaç heceyi birleştirse de (EY Â
+  HIDI GAYB AL ELI) yalnız heceler arasındaki boşluğa bakılır.
+- 40 Atkoşar eserinde: 49 hece kazanıldı (gerçek söz), OCR çöpü 15 hece atıldı, kaybolan gerçek hece yok.
+- `servis/soz_katmani.py --onbellek <klasör>`: eserin porteleri, nota başları ve OCR kelimeleri saklanır; kurallar
+  değişince katman OCR'sız, saniyede yeniden yapılır.

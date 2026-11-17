@@ -279,17 +279,44 @@ def _poem(line: list[Word]) -> bool:
     return len(lengths) >= 3 and (float(np.median(lengths)) >= 5 or sum(n >= 7 for n in lengths) * 2 > len(lengths))
 
 
-def _outside_parentheses(line: list[Word]) -> list[Word]:
-    """A line (left to right) without what stands in parentheses: a direction, (2'ye), (III ve IV KITA'YA)."""
-    out, inside = [], False
-    for w in line:
-        if w.text.startswith("("):
-            inside = True
-        if not inside:
-            out.append(w)
-        if w.text.rstrip(".,;").endswith(")"):
-            inside = False
+def _closes(word: Word) -> bool:
+    return word.text.rstrip(".,;").endswith(")")
+
+
+def _outside_parentheses(line: list[Word], ocr: bool = False) -> list[Word]:
+    """A line (left to right) without what stands in parentheses: a direction, (2'ye), (III ve IV KITA'YA). A
+    parenthesis that nothing closes runs to the end of the line, but on a line read by OCR, which misses the ')' of a
+    written (- - SAZ - -), only the opening word is left out, not the syllables after it."""
+    out, i = [], 0
+    while i < len(line):
+        if line[i].text.startswith("("):
+            close = next((j for j in range(i, len(line)) if _closes(line[j])), None)
+            if close is None and not ocr:
+                break
+            i = i + 1 if close is None else close + 1
+            continue
+        out.append(line[i])
+        i += 1
     return out
+
+
+def _credit(line: list[Word], ocr: bool = False) -> bool:
+    """A line (left to right) of a credit or a date: a colon (Güfte:, B.T.:), two digits in a word (07 Ağustos 1963)
+    or a credit's word (Güfte Vâhid Özaydın). On a line read by OCR a colon counts only after letters among the line's
+    first two words, and a number only as digits alone (or four in a word): a colon further on is a misread of the
+    dots after a held syllable (ben de ği im :.SAZ), digits among letters a misread syllable (son as 50n)."""
+    if not ocr:
+        return any(":" in w.text or sum(c.isdigit() for c in w.text) >= 2 or _fold(w.text) in CREDITS for w in line)
+    return any((i < 2 and ":" in w.text and _letters(w.text.split(":")[0])) or _number(w.text)
+               or _fold(w.text) in CREDITS for i, w in enumerate(line))
+
+
+def _number(text: str) -> bool:
+    """A number of a date or a credit (07, 1963, 7.8.1963): digits only, two or more, or four digits in a word
+    (1963'te). A word of digits and letters is a misread syllable (son read as 50n)."""
+    core = re.sub(r"\W", "", text)
+    digits = sum(c.isdigit() for c in core)
+    return (len(core) >= 2 and core.isdigit()) or digits >= 4
 
 
 def _without_spaced_letters(words: list[Word]) -> list[Word]:
@@ -314,12 +341,14 @@ def _vowels(text: str) -> int:
     return sum(c in _VOWELS for c in text)
 
 
-def _heading(line: list[Word]) -> bool:
+def _heading(line: list[Word], ocr: bool = False) -> bool:
     """A line (left to right) in capitals that is not sung: a heading (a section's name, the work's name, its makam
     or usul, an abbreviation: ARANAĞME, RAST MARŞ, EVÇ SAZ SEMÂİSİ, ÜMC), a title in quotes or the syllables an usul is
     said with (DÜM TEK TE KE), not a line of syllables written in capitals (AK SA RAY DAN GE ÇER, HEY HEY HEY). A line
     of syllables has two or more, most of one vowel, and they stand apart, each under its note; a heading is one word,
-    or words of several syllables, or words a space apart."""
+    or words of several syllables, or words a space apart. On a line read by OCR, six or more short pieces (half of
+    them three letters or fewer) are syllables even when OCR has joined some of them (EY Â HIDI GAYB AL ELI NI HAK KII
+    ZÂ RIN): only their spacing is asked."""
     parts = [_letters(p) for w in line for p in re.split(r"[-–]", w.text) if _letters(p)]
     if not parts or not all(p.isupper() for p in parts):
         return False
@@ -327,7 +356,8 @@ def _heading(line: list[Word]) -> bool:
         return len(parts[0]) >= 2  # a lone vowel is a syllable
     if all(_fold(p) in VELVELE for p in parts):
         return True
-    if sum(_vowels(p) > 1 for p in parts) * 4 > len(parts):  # words (OCR joins a few syllables: GELIN, 2 in 9)
+    short = ocr and len(parts) >= 6 and float(np.median([len(p) for p in parts])) <= 3
+    if not short and sum(_vowels(p) > 1 for p in parts) * 4 > len(parts):  # words (OCR joins a few: GELIN, 2 in 9)
         return True
     gaps = [b.box[0] - a.box[2] for a, b in zip(line, line[1:])]
     return not gaps or float(np.median(gaps)) < 0.5 * float(np.median([w.height for w in line]))
@@ -383,13 +413,14 @@ def _lines(words: list[Word]) -> list[list[Word]]:
             lines[-1].append(word)
     out = []
     for line in lines:
-        line = _outside_parentheses(sorted(line, key=lambda w: w.box[0]))
-        if not line:
+        line = sorted(line, key=lambda w: w.box[0])
+        ocr = any(w.left for w in line)  # read by OCR from a scan, not from a page's exact text layer
+        if ocr and _credit(line, ocr):  # a credit in parentheses, its ')' missed: (B.T.: Fuad Edip Baksı
             continue
-        # a credit or a date (one digit alone is more likely a letter misread: l as 1)
-        if any(":" in w.text or sum(c.isdigit() for c in w.text) >= 2 or _fold(w.text) in CREDITS for w in line):
+        line = _outside_parentheses(line, ocr)
+        if not line or _credit(line, ocr):
             continue
-        if _heading(line):
+        if _heading(line, ocr):
             continue
         kept = sorted((Word(_clean(w.text), w.box, w.score, w.left) for w in line if _sung(w)), key=lambda w: w.cx)
         kept = [w for w in kept if w.text]
