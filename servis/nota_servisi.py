@@ -83,7 +83,7 @@ from fastapi.responses import JSONResponse
 from homr import main as reader_main
 from homr.autocrop import autocrop_box
 from homr.baslik_okuyucu import prepare as prepare_header_reader
-from homr.baslik_okuyucu import read_header
+from homr.baslik_okuyucu import fold, read_header
 from homr.main import ProcessingConfig, detect_staffs_in_image
 from homr.lyrics import StaffLyrics, add_lyrics, lyric_bands, ocr_words, staff_lyrics, text_layer_words
 from homr.makam_key import resolve_western_sounding
@@ -144,6 +144,15 @@ MEND_VOLTAS = os.environ.get("OMR_VOLTA_ONAR", "1") != "0"
 # parts is left without. Off by default: the answer is as before
 LYRICS = os.environ.get("OMR_SOZ_OKU", "")
 READ_LYRICS = LYRICS in ("1", "katman")
+# lyrics read by OCR are written only when there are enough of them and OCR was sure enough of them (the answer's
+# heceSayisi and guven, of the staffs OCR read); below either no <lyric> is written (soz.yazilmadi 'esik_alti'). The
+# app shows only the MusicXML's lyrics, so the threshold is the reader's (Musiki Akademisi, 18.11.2026). The text
+# layer's lyrics are written as they are
+OCR_MIN_SYLLABLES = 20
+OCR_MIN_CONFIDENCE = 0.85
+# no OCR for lyrics in a work whose title block names an instrumental form with this confidence (folded names)
+INSTRUMENTAL_FORMS = {"pesrev", "sazsemaisi", "longa", "sirto"}
+INSTRUMENTAL_FORM_CONFIDENCE = 0.9
 SOFTWARE = [name.strip() for name in os.environ.get("OMR_YAZILIM", "Musiki Akademisi OMR;AEU-OMR").split(";")
             if name.strip()]
 KEY = os.environ.get("OMR_ANAHTAR", "")
@@ -310,7 +319,9 @@ def lyrics_summary(record: list[dict], sources: set[str], left_out: str | None) 
     written to notes; bagsizHece: syllables read that no note took (not written); kitaSayisi: the most verses under
     a staff; sozluPorte: staffs with lyrics; ortalamaGuven: the syllables' mean recognition score (1 for the text
     layer); guven: ortalamaGuven times the share of syllables written, null without lyrics; yazilmadi: why lyrics
-    found were not written ('cok_partili', 'sol_anahtari_degil', 'hata'), else null."""
+    found were not written ('cok_partili', 'sol_anahtari_degil', 'hata'; 'esik_alti' when the syllables OCR read
+    fell below the threshold, the counts then those read; 'sozsuz_form' when OCR did not run for an instrumental
+    form), else null."""
     written = [r for r in record if r["olcu"] is not None]
     unbound = len(record) - len(written)
     source = None if not sources else sources.pop() if len(sources) == 1 else "karma"
@@ -319,6 +330,25 @@ def lyrics_summary(record: list[dict], sources: set[str], left_out: str | None) 
             "kitaSayisi": max((r["kita"] for r in written), default=0),
             "sozluPorte": len({r["porte"] for r in written}), "ortalamaGuven": mean,
             "guven": round(mean * len(written) / len(record), 3) if written else None, "yazilmadi": left_out}
+
+
+def ocr_lyrics_kept(record: list[dict], ocr_staffs: set[int]) -> bool:
+    """Whether the syllables of the staffs OCR read (their numbers from 1) are to be written: at least
+    OCR_MIN_SYLLABLES of them on notes and their guven (as lyrics_summary gives it) at least OCR_MIN_CONFIDENCE.
+    True when OCR read none."""
+    read = [r for r in record if r["porte"] in ocr_staffs]
+    if not read:
+        return True
+    summary = lyrics_summary(read, {"ocr"}, None)
+    return summary["heceSayisi"] >= OCR_MIN_SYLLABLES and (summary["guven"] or 0) >= OCR_MIN_CONFIDENCE
+
+
+def instrumental_form(header: dict | None) -> bool:
+    """Whether the title block (the answer's baslikBilgisi) names an instrumental form, read with at least
+    INSTRUMENTAL_FORM_CONFIDENCE: then no OCR looks for lyrics. A form unread or uncertain leaves OCR to run."""
+    form = (header or {}).get("form")
+    confidence = ((header or {}).get("guven") or {}).get("form") or 0
+    return bool(form) and fold(form) in INSTRUMENTAL_FORMS and confidence >= INSTRUMENTAL_FORM_CONFIDENCE
 
 
 def numbered(numbers: list[int]) -> str:
@@ -377,16 +407,19 @@ class Reader:
 
     @staticmethod
     def _page_lyrics(path: str, page_no: int, dpi: float | None, source: str, gray_page,  # noqa: ANN001
-                     boxes: list[tuple]) -> tuple[list[StaffLyrics], str | None]:
+                     boxes: list[tuple], ocr: bool = True) -> tuple[list[StaffLyrics], str | None]:
         """The lyric lines under each of a page's staffs: from the text layer of a PDF page drawn as notation
         ('dijital') when it has one with letters, otherwise by OCR in the staffs' lyric bands (not with
-        OMR_SOZ_OKU=katman). A scanned page's text layer (an OCR's, hidden under the picture) is not taken. A failure
-        leaves the page's staffs without lyrics; the reading goes on. With the lyrics, where they came from: 'katman',
-        'ocr', or None when the page has none ('hata' when the step failed)."""
+        OMR_SOZ_OKU=katman, nor when ocr is False). A scanned page's text layer (an OCR's, hidden under the picture)
+        is not taken. A failure leaves the page's staffs without lyrics; the reading goes on. With the lyrics, where
+        they came from: 'katman', 'ocr', or None when the page has none ('hata' when the step failed, 'atlandi'
+        when OCR was due but not to run)."""
         try:
             words = text_layer_words(path, page_no, dpi / 72) if dpi and source == "dijital" else []
             kind = "katman"
             if not words and LYRICS == "1":
+                if not ocr:
+                    return [StaffLyrics() for _ in boxes], "atlandi"
                 words = ocr_words(gray_page, lyric_bands(boxes, gray_page.shape[0]))
                 kind = "ocr"
             lyrics = staff_lyrics(words, boxes, gray_page.shape[0])
@@ -472,6 +505,9 @@ class Reader:
         heads: list[list[tuple[float, int]]] = []  # each staff's noteheads (x in the page's pixels, place on the staff)
         lyrics: list[StaffLyrics] = []  # each staff's lyric lines (with READ_LYRICS)
         lyric_sources: set[str] = set()  # where the pages' lyrics came from
+        ocr_staffs: set[int] = set()  # the staffs (numbers from 1) whose lyrics OCR read
+        ocr_skipped = False  # OCR did not run on a page for the instrumental form the title block names
+        early_header: tuple | None = None  # with OCR lyrics: the title block read before them, and its warnings
         total = page_count(path)
         pages = pages or list(range(1, total + 1))
         with self.lock, tempfile.TemporaryDirectory() as scratch:
@@ -544,22 +580,37 @@ class Reader:
                     staffs += 1
                 if header_page is None and len(staff_boxes) > page_first:
                     header_page = (page_no, page_pixels, min(b[1] for _, b in staff_boxes[page_first:]))
+                    if READ_LYRICS and LYRICS == "1" and READ_HEADER:
+                        # the title block now, before the page's lyrics: a form read surely as instrumental needs
+                        # no OCR. Its warnings join the others where they always stood
+                        early_warnings: list[str] = []
+                        early_header = (self._title_block(header_page, early_warnings), early_warnings)
                 gray_page = cv2.cvtColor(page_pixels, cv2.COLOR_BGR2GRAY)
                 for mark in read_tempo_marks(gray_page, [tuple(b) for _, b in staff_boxes[page_first:]]):
                     tempo_found.append((page_first + mark.staff, mark))
                 if READ_LYRICS:
+                    skip_ocr = early_header is not None and instrumental_form(early_header[0])
                     page_lyrics, lyric_source = self._page_lyrics(path, page_no, dpi, source, gray_page,
-                                                                  [tuple(b) for _, b in staff_boxes[page_first:]])
+                                                                  [tuple(b) for _, b in staff_boxes[page_first:]],
+                                                                  ocr=not skip_ocr)
                     lyrics += page_lyrics
-                    if lyric_source:
+                    if lyric_source == "atlandi":
+                        ocr_skipped = True
+                    elif lyric_source:
                         lyric_sources.add(lyric_source)
+                        if lyric_source == "ocr":
+                            ocr_staffs.update(range(page_first + 1, page_first + len(page_lyrics) + 1))
                 if progress is not None:
                     progress(done + 1, staffs)
             if not staffs:
                 raise ReadError(422, "porte_bulunamadi",
                                 "Görüntüde okunabilir porte bulunamadı. Sayfanın tamamı, düz ve net çekilmiş "
                                 "olmalı.")
-            header = self._title_block(header_page, warnings) if READ_HEADER else None
+            if early_header is not None:
+                header = early_header[0]
+                warnings += early_header[1]
+            else:
+                header = self._title_block(header_page, warnings) if READ_HEADER else None
             polyphonic = any(layout.staffs > 1 or layout.groups for layout in layouts)
             base_read = [n for n, by in enumerate(read_by, 1) if by == BASE_READER]
             plan: ScorePlan | None = None
@@ -617,13 +668,25 @@ class Reader:
                 elif re.search(r"<sign>[FC]</sign>", musicxml):
                     lyrics_left_out = "sol_anahtari_degil"
                 else:
+                    bare = musicxml
+                    boxes = [tuple(b) for _, b in staff_boxes]
                     try:
-                        musicxml, self.lyrics_record = add_lyrics(musicxml, staff_measures, heads, lyrics,
-                                                                  [tuple(b) for _, b in staff_boxes])
+                        musicxml, self.lyrics_record = add_lyrics(musicxml, staff_measures, heads, lyrics, boxes)
+                        if not ocr_lyrics_kept(self.lyrics_record, ocr_staffs):
+                            kept = [StaffLyrics() if n in ocr_staffs else s for n, s in enumerate(lyrics, 1)]
+                            if any(s.lines for s in kept):  # pages of the text layer keep their lyrics
+                                musicxml, self.lyrics_record = add_lyrics(bare, staff_measures, heads, kept, boxes)
+                                lyric_sources.discard("ocr")
+                            else:  # nothing is written; the record stays, for the answer's counts
+                                musicxml = bare
+                                lyrics_left_out = "esik_alti"
                     except Exception:  # noqa: BLE001  (the reading stands without its lyrics)
+                        musicxml, self.lyrics_record = bare, []
                         lyrics_left_out = "hata"
             if "hata" in lyric_sources and lyrics_left_out is None and not self.lyrics_record:
                 lyrics_left_out = "hata"
+            if ocr_skipped and lyrics_left_out is None and not self.lyrics_record:
+                lyrics_left_out = "sozsuz_form"
         written = {int(n) for n in re.findall(r'<measure number="(\d+)"', musicxml)}
         measures = [{"olcu": n, "guven": round(c, 3)} for n, c in sorted(confidence.items()) if n in written]
         weak = sum(1 for m in measures if m["guven"] < LOW_CONFIDENCE)
