@@ -28,12 +28,15 @@ RUN pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-u
     && pip install -r requirements-cpu.txt \
     && pip install --no-deps --force-reinstall opencv-python-headless==5.0.0.93
 
-# the OCR models of the title-block reader (RapidOCR's PP-OCRv6 detector and recogniser, the angle classifier) go
-# into the package's models folder, where RapidOCR looks; loading the reader once checks them against RapidOCR's
-# checksums and downloads any that hazirla.py did not bring, so a running container never fetches a model
+# the OCR models of the title-block reader (RapidOCR's PP-OCRv6 detector and recogniser, the angle classifier) and
+# the latin recogniser of the lyrics (OMR_SOZ_OKU=1) go into the package's models folder, where RapidOCR looks;
+# loading both readers once checks them against RapidOCR's checksums and downloads any that hazirla.py did not
+# bring, so a running container never fetches a model (its user may not write there: a missing model would leave
+# every picture without lyrics)
 COPY ocr_modelleri/ /tmp/ocr_modelleri/
 RUN python -c "import glob, os, shutil, rapidocr; d = os.path.join(os.path.dirname(rapidocr.__file__), 'models'); os.makedirs(d, exist_ok=True); [shutil.copy(f, d) for f in glob.glob('/tmp/ocr_modelleri/*.onnx')]" \
     && python -c "from rapidocr import RapidOCR; RapidOCR(params={'Global.log_level': 'warning'})" \
+    && python -c "from rapidocr import LangRec, ModelType, OCRVersion, RapidOCR; RapidOCR(params={'Global.log_level': 'warning', 'Rec.lang_type': LangRec.LATIN, 'Rec.ocr_version': OCRVersion.PPOCRV5, 'Rec.model_type': ModelType.MOBILE})" \
     && rm -rf /tmp/ocr_modelleri
 
 # the user is made before the code comes in, so that the code is copied as its own: a chown -R after the COPY

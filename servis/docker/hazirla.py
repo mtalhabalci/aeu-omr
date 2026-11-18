@@ -45,8 +45,10 @@ DATA = [
     os.path.join(NAME, "baslik_isimleri.json"),
 ]
 # RapidOCR's default models, as the title-block reader loads them (PP-OCRv6 small detector and recogniser, the
-# angle classifier); RapidOCR downloads them on first use, so they are taken from this machine's installation
-OCR_MODELS = ["PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx", "ch_ppocr_mobile_v2.0_cls_mobile.onnx"]
+# angle classifier), and the latin recogniser the lyrics are read with on a picture (OMR_SOZ_OKU=1, homr/lyrics.py);
+# RapidOCR downloads them on first use, so they are taken from this machine's installation
+OCR_MODELS = ["PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx", "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+              "latin_PP-OCRv5_rec_mobile.onnx"]
 SKIP_DIRS = {"__pycache__", "ornekler"}
 
 

@@ -26,7 +26,7 @@ projenin adı geçmez (Talha'nın kuralı); MusicXML'deki `<software>` alanı `O
 | `OMR_TOPLU_PORTE` | `0` | bir sayfanın portelerinden en çok bu kadarı birlikte okunur; `0`/`1`: tek tek. Her porte tek başına okunduğu gibi okunur, notalar ve güvenler son bitine kadar aynı (`training/architecture/transformer/exact_batch.py`). Önerilen `4`: okuma ~%30 hızlanır, tepe bellek artmaz (aşağıda "Süre") |
 | `OMR_BASLIK_OKU` | `1` | `0`: başlık bilgisi okunmaz. `baslikBilgisi` uyarısız `null` döner; MusicXML'de eser adı, bestekâr, güfte, makam, form ve usul olmaz. Künyesi katalogdan gelen toplu okuma içindir: eser başına ~1 sn kazandırır. Gerisi başlık okunduğundaki gibidir, bayt bayt (aşağıda "Süre") |
 | `OMR_BELLEK_BIRAK` | kapalı | `1`: her okumadan sonra glibc'nin `malloc_trim(0)`'ı boştaki belleği sisteme geri verir. Yalnız Linux'ta çalışır, başka yerde bir şey yapmaz; okumayı değiştirmez (aşağıda "Süre") |
-| `OMR_SOZ_OKU` | kapalı | `katman`: dijital PDF sayfalarının (notası çizim olarak basılmış, `kaynak: dijital`) metin katmanındaki sözler, altında durdukları notalara MusicXML `<lyric number="kıta">` olarak yazılır (`syllabic` hep `single`: baskılarda heceler arasında tire yok). `1`: metin katmanı olmayan sayfalarda (tarama, fotoğraf) sözler OCR'la okunur (RapidOCR latin tanıyıcısı; imajda yok, ölçüsü yetersiz, açılmadı). Çok partili eserler sözsüz kalır; söz adımı hata verirse okuma sözsüz sürer. Kapalıyken cevap bayt bayt aynıdır (aşağıda "Sözler") |
+| `OMR_SOZ_OKU` | kapalı | `katman`: dijital PDF sayfalarının (notası çizim olarak basılmış, `kaynak: dijital`) metin katmanındaki sözler, altında durdukları notalara MusicXML `<lyric number="kıta">` olarak yazılır (`syllabic` hep `single`: baskılarda heceler arasında tire yok). `1`: metin katmanı olmayan sayfalarda (tarama, fotoğraf) sözler OCR'la okunur (RapidOCR latin tanıyıcısı, 18.11.2026'dan beri imajda; resimli sayfaya ~9 sn, okuma süresine ~%37 ekler; ölçüler aşağıda "Sözler"). Çok partili eserler sözsüz kalır; söz adımı hata verirse okuma sözsüz sürer. Kapalıyken cevap bayt bayt aynıdır (aşağıda "Sözler") |
 | `OMR_VOLTA_ONAR` | `1` | `0`: voltalar okunduğu gibi yazılır. Varsayılan: başı okunamamış voltanın başı konur, hiç kapanmayan 3. volta ile önündeki tekrar yazılmaz, başıboş volta kapanışı atılır; ilk ikisi `uyarilar`'a yazılır. Notalar, süreler ve ölçüler değişmez (aşağıda "MusicXML yapısı") |
 
 ## Uç noktalar
@@ -336,7 +336,29 @@ Uygulamanın söz eşiği `guven` üzerinden kurulur.
 - Metin katmanında `guven` 1'dir (bağsız hece yoksa). Eşik orada bir şeyi değiştirmez.
 - OCR'da `guven` kalibre değildir. Pilotta eser ortalaması 0,85–0,98 çıktı, oysa hakemlerin ölçtüğü metin isabeti
   %46–98 arasındaydı. İkisinin eser düzeyinde korelasyonu 0,6. Ortalaması 0,86'nın altındaki eserlerde isabet
-  %46–76 kaldı. OCR yolu açılmadan önce eşik yeni bir ölçümle ayarlanmalıdır.
+  %46–76 kaldı. Atkoşar'ın örnek dışı ölçümünde (15.11.2026) `guven` ≥ 0,98 olan hecelerde bile metin isabeti %80
+  civarındaydı. Önerilen gösterim eşiği: `heceSayisi` ≥ 20 ve `guven` ≥ 0,85. Bu eşik, sözsüz bir taramada OCR'ın
+  bulduğu çöpü de gizler (aşağıda notaarsivleri saz semaisi: 6 hece, `guven` 0,69).
+
+`OMR_SOZ_OKU=1` ile, resimli sayfada (OCR):
+
+- Doğruluk (15.11.2026, Atkoşar parti-001'den örnek dışı 10 eser, 841 hece, 3 hakemli kör kontrol): hecenin doğru
+  notaya bağlanması %96,3 (%95 aralık 94,8–97,4); metin harfi harfine doğru %78,9, harf işareti ve büyük-küçük harf
+  ayrımı sayılmazsa %93,6; kaçan hece %14,5; söz olmayan yazı %5,7. Hataların yarısı ı/i, ş/s, â/a. 17.11.2026 kural
+  düzeltmeleri (aşağıda) bu ölçümden sonradır.
+- Süre (18.11.2026; masaüstü 7600X, sunucu konteyneri gibi 4 çekirdek ve 4 iş parçacığı, arka planda iki düşük
+  öncelikli süreçle; her dosya iki kipte ikişer kez, sırası değişerek): 8 dosya, 11 sayfa.
+
+  | Sayfa | Okuma (`katman`) | OCR'lı (`1`) | Fark |
+  |---|---|---|---|
+  | Atkoşar el yazısı, 3 eser (6–10 porte) | 20,5–29,0 sn | 29,4–40,2 sn | +8,1–11,3 sn (%36–43) |
+  | Kitap taraması, sözlü 3 eser, 4 sayfa (7–17 porte) | 24,3–47,3 sn | 34,0–69,4 sn | +9,7–22,1 sn (%30–47) |
+  | Sözsüz tarama (saz semaisi, 2 sayfa) | 44,1 sn | 54,9 sn | +10,8 sn (%25) |
+  | Dijital PDF (Üsküdar, 2 sayfa) | 40,1 sn | 38,2 sn | 0 (OCR çalışmaz) |
+
+  Resimli 9 sayfada OCR sayfa başına ortalama 8,6 sn (5,7–11,5) sürdü; okuma sayfa başına 25,0 sn'den 34,1 sn'ye çıktı
+  (%37). OCR ilk kullanımda 0,7 sn'de yüklenir ve 10 MB ekler; işlemin tepe belleği (2,47 GB) değişmedi. Sözsüz
+  formlarda da OCR çalışır (form bilgisine göre atlanmaz).
 
 `OMR_SOZ_OKU=katman` ile (14.11.2026 ölçümü):
 
