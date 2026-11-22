@@ -48,8 +48,9 @@ if __name__ == "__main__":
         sys.exit("okunacak pdf yok")
     out = os.path.join(options.calisma, options.ad)
     os.makedirs(out, exist_ok=True)
-    kod = subprocess.run([sys.executable, "-m", "training.read_page", "--folder", options.folder,
-                          "--checkpoint", options.checkpoint, "--out", out], check=False).returncode
+    # Through dongu_say, which leaves the reading as it is and prints how often each decoding rule acted in it.
+    kod = subprocess.run([sys.executable, "-m", "training.olcum.dongu_say", "training.read_page", "--folder",
+                          options.folder, "--checkpoint", options.checkpoint, "--out", out], check=False).returncode
     records = {}
     for yol in sorted(glob.glob(os.path.join(out, "*.json"))):
         with open(yol, encoding="utf-8") as dosya:
